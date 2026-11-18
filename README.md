@@ -72,6 +72,18 @@ Good to know about NJ Transit's API (from its terms and from the open-source `ra
 
 Cloudflare's free plan needs no card and allows 100,000 requests a day.
 
+### Easiest: deploy straight from GitHub (no commands)
+
+1. In the Cloudflare dashboard, open **Workers & Pages**, select **Create application**, then **GitHub**, and let Cloudflare see this repo.
+2. Pick `njtransit-mcp`. Keep the Worker name exactly `njtransit-mcp` (it must match `wrangler.toml`). Leave the build command empty;
+   the deploy command is `npx wrangler deploy`. Select **Save and Deploy**.
+3. Open the `https://njtransit-mcp.<your-subdomain>.workers.dev` address it shows. You should see `"mode": "mock"`.
+4. In the Worker, go to **Settings → Variables and Secrets → Add**, type **Secret**, and add `MCP_ACCESS_KEY`
+   (any long random text). Later add `NJT_USERNAME` and `NJT_PASSWORD` the same way to switch to live data.
+5. Every push to `main` redeploys automatically.
+
+### With the command line
+
 ```bash
 npm install
 npx wrangler login                          # opens a browser to sign in or sign up (free)
