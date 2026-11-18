@@ -1,0 +1,8 @@
+# Copy to .dev.vars for `npx wrangler dev`, or export these for `npm start`.
+# Leave the NJT_ lines empty to use built-in sample data.
+NJT_USERNAME=
+NJT_PASSWORD=
+# Optional: protect your URL. The MCP endpoint becomes /mcp/<this value>.
+MCP_ACCESS_KEY=
+# Optional: use NJ Transit's test server instead of production.
+NJT_USE_TEST_API=false

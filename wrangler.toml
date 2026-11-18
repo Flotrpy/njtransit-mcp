@@ -1,0 +1,17 @@
+# Cloudflare Workers config (free plan, no card needed).
+name = "njtransit-mcp"
+main = "src/worker.ts"
+compatibility_date = "2025-09-01"
+
+# Optional but recommended: a KV namespace keeps the NJ Transit token between
+# restarts (NJ Transit allows only 5 new tokens a day). Create it with
+#   npx wrangler kv namespace create CACHE
+# then uncomment these lines and paste the id it prints.
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "paste-the-id-here"
+
+# Secrets are NOT stored here. Set them with:
+#   npx wrangler secret put NJT_USERNAME
+#   npx wrangler secret put NJT_PASSWORD
+#   npx wrangler secret put MCP_ACCESS_KEY

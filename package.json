@@ -1,0 +1,22 @@
+{
+  "name": "njtransit-mcp",
+  "version": "0.1.0",
+  "description": "MCP connector for NJ Transit trains: live departures, trips between stations, train tracking and alerts.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "start": "node src/node-server.ts",
+    "dev": "node --watch src/node-server.ts",
+    "try": "node src/cli.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.0.0"
+  }
+}
