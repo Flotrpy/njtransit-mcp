@@ -5,7 +5,7 @@ and log it in CHANGELOG.md. Keep each one to roughly an hour of work: a new
 tool, a new option on an existing tool, or a clear improvement to an answer.
 Add new ideas at the bottom.
 
-- [ ] `last_train`: the last direct train tonight from A to B (uses the full board in `boardWithStops`).
+- [x] `last_train` (Nov 18): the last direct train tonight from A to B (uses the full board in `boardWithStops`).
 - [ ] `plan_trip` with transfers: when there's no one-seat ride, try two-leg trips via Secaucus (SE) or Newark Penn (NP), with the connection time.
 - [ ] `train_status` crowding by car: use CAPACITY → SECTIONS → CARS to say which end of the train is emptiest.
 - [ ] `my_commute`: env vars `COMMUTE_HOME` / `COMMUTE_SCHOOL` (station names); one call shows the next trains both ways.

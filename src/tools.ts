@@ -2,7 +2,7 @@
 
 import { matchesLine, matchesText, resolveStation, searchStations, StationNotFound } from "./match.ts";
 import { NjtError } from "./njt.ts";
-import { formatClock, formatDayClock, formatDuration, parseNjtTime, relativeMinutes } from "./time.ts";
+import { etParts, etWallToEpoch, formatClock, formatDayClock, formatDuration, parseNjtTime, relativeMinutes } from "./time.ts";
 import type { RailSource, ScheduleItem, Stop, TrainStopList } from "./types.ts";
 
 export interface ToolResult {
@@ -243,6 +243,65 @@ const nextDepartures: ToolDef = {
   },
 };
 
+interface DirectTrip {
+  dep: ReturnType<typeof toDeparture>;
+  depart?: number;
+  arrive?: number;
+}
+
+/**
+ * Trains on a departure board that run from one station to another without a change.
+ * Some boards come without stop lists; those trains are looked up one by one (a few at most).
+ */
+async function directTrips(
+  ctx: ToolContext,
+  items: ScheduleItem[],
+  fromCode: string,
+  toCode: string,
+  maxTrips: number,
+): Promise<DirectTrip[]> {
+  let lookups = 0;
+  const trips: DirectTrip[] = [];
+  for (const item of items) {
+    if (trips.length >= maxTrips) break;
+    let stops: Stop[] | null | undefined = item.STOPS;
+    if (!stops?.length) {
+      if (lookups >= 12) continue;
+      lookups++;
+      try {
+        stops = (await ctx.source.trainStops(item.TRAIN_ID)).STOPS;
+      } catch {
+        continue;
+      }
+    }
+    if (!stops?.length) continue;
+    const iFrom = stops.findIndex((s) => s.STATION_2CHAR === fromCode);
+    const iTo = stops.findIndex((s, i) => i > iFrom && s.STATION_2CHAR === toCode);
+    if (iFrom < 0 || iTo < 0) continue;
+    if (/^n/i.test(stops[iTo].DROPOFF ?? "")) continue; // doesn't let people off there
+    const dep = toDeparture(item);
+    trips.push({ dep, depart: stopTime(stops[iFrom]) ?? dep.expMs, arrive: stopTime(stops[iTo]) });
+  }
+  return trips;
+}
+
+function tripLine(t: DirectTrip, now: number, label: string): string {
+  const d = t.dep;
+  const leave = t.depart !== undefined ? `${formatClock(t.depart)} (${relativeMinutes(t.depart, now)})` : d.scheduled;
+  const arrive = t.arrive !== undefined ? formatClock(t.arrive) : "arrival time not listed";
+  const dur = t.depart !== undefined && t.arrive !== undefined ? ` · ${formatDuration(t.arrive - t.depart)}` : "";
+  return `${label}Leave ${leave} → arrive ${arrive}${dur} · Train ${d.trainId} (${d.line}) · ${d.track ? `Track ${d.track}` : "Track not posted yet"} · ${d.status}`;
+}
+
+function tripData(t: DirectTrip) {
+  return {
+    ...stripInternal(t.dep),
+    departs: t.depart !== undefined ? formatClock(t.depart) : null,
+    arrives: t.arrive !== undefined ? formatClock(t.arrive) : null,
+    minutes: t.depart !== undefined && t.arrive !== undefined ? Math.round((t.arrive - t.depart) / 60000) : null,
+  };
+}
+
 const planTrip: ToolDef = {
   name: "plan_trip",
   title: "Direct NJ Transit trains between two stations",
@@ -272,33 +331,7 @@ const planTrip: ToolDef = {
     const now = ctx.now();
     const items = board.ITEMS ?? [];
 
-    // Some boards come without stop lists; look those trains up one by one (a few at most).
-    let lookups = 0;
-    const trips: { dep: ReturnType<typeof toDeparture>; arrive?: number; depart?: number }[] = [];
-    for (const item of items) {
-      if (trips.length >= limit) break;
-      let stops: Stop[] | null | undefined = item.STOPS;
-      if (!stops?.length) {
-        if (lookups >= 12) continue;
-        lookups++;
-        try {
-          stops = (await ctx.source.trainStops(item.TRAIN_ID)).STOPS;
-        } catch {
-          continue;
-        }
-      }
-      if (!stops?.length) continue;
-      const iFrom = stops.findIndex((s) => s.STATION_2CHAR === from.STATION_2CHAR);
-      const iTo = stops.findIndex((s, i) => i > iFrom && s.STATION_2CHAR === to.STATION_2CHAR);
-      if (iFrom < 0 || iTo < 0) continue;
-      if (/^n/i.test(stops[iTo].DROPOFF ?? "")) continue; // doesn't let people off there
-      const dep = toDeparture(item);
-      trips.push({
-        dep,
-        depart: stopTime(stops[iFrom]) ?? dep.expMs,
-        arrive: stopTime(stops[iTo]),
-      });
-    }
+    const trips = await directTrips(ctx, items, from.STATION_2CHAR, to.STATION_2CHAR, limit);
 
     const header = `Direct trains from ${from.STATIONNAME} (${from.STATION_2CHAR}) to ${to.STATIONNAME} (${to.STATION_2CHAR}):`;
     if (!trips.length) {
@@ -309,22 +342,11 @@ const planTrip: ToolDef = {
         { from: from.STATION_2CHAR, to: to.STATION_2CHAR, trips: [], sampleData: ctx.source.mode === "mock" },
       );
     }
-    const lines = trips.map((t, i) => {
-      const d = t.dep;
-      const leave = t.depart !== undefined ? `${formatClock(t.depart)} (${relativeMinutes(t.depart, now)})` : d.scheduled;
-      const arrive = t.arrive !== undefined ? formatClock(t.arrive) : "arrival time not listed";
-      const dur = t.depart !== undefined && t.arrive !== undefined ? ` · ${formatDuration(t.arrive - t.depart)}` : "";
-      return `${i + 1}. Leave ${leave} → arrive ${arrive}${dur} · Train ${d.trainId} (${d.line}) · ${d.track ? `Track ${d.track}` : "Track not posted yet"} · ${d.status}`;
-    });
+    const lines = trips.map((t, i) => tripLine(t, now, `${i + 1}. `));
     return text(`${header}\n${lines.join("\n")}\n\n${footer(ctx.source, now)}`, {
       from: { code: from.STATION_2CHAR, name: from.STATIONNAME },
       to: { code: to.STATION_2CHAR, name: to.STATIONNAME },
-      trips: trips.map((t) => ({
-        ...stripInternal(t.dep),
-        departs: t.depart !== undefined ? formatClock(t.depart) : null,
-        arrives: t.arrive !== undefined ? formatClock(t.arrive) : null,
-        minutes: t.depart !== undefined && t.arrive !== undefined ? Math.round((t.arrive - t.depart) / 60000) : null,
-      })),
+      trips: trips.map(tripData),
       sampleData: ctx.source.mode === "mock",
     });
   },
@@ -333,6 +355,97 @@ const planTrip: ToolDef = {
 function stopTime(s: Stop): number | undefined {
   return parseNjtTime(s.TIME_UTC_FORMAT) ?? parseNjtTime(s.DEP_TIME) ?? parseNjtTime(s.TIME);
 }
+
+/**
+ * End of tonight's service day: 3:00 AM Eastern. Before 3 AM that's today's 3 AM;
+ * otherwise tomorrow's. Also returns 11 PM tonight, used to tell whether NJ Transit's
+ * board reaches far enough into the evening to trust it.
+ */
+export function tonightWindow(now: number): { cutoff: number; lateEvening: number } {
+  const p = etParts(now);
+  const at = (dayOffset: number, hour: number) =>
+    etWallToEpoch({ year: p.year, month: p.month, day: p.day + dayOffset, hour, minute: 0, second: 0 });
+  if (p.hour < 3) return { cutoff: at(0, 3), lateEvening: now };
+  return { cutoff: at(1, 3), lateEvening: Math.max(now, at(0, 23)) };
+}
+
+const lastTrain: ToolDef = {
+  name: "last_train",
+  title: "Last NJ Transit train tonight",
+  description:
+    "The last direct NJ Transit train tonight from one station to another (service until about 3 AM Eastern), " +
+    "with the two before it as backups. Use for \"what's the last train home from Penn Station?\". " +
+    "Skips cancelled trains. If NJ Transit's board doesn't reach late enough yet, it says later trains may exist.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      from: { type: "string", description: "Starting station name or code." },
+      to: { type: "string", description: "Destination station name or code." },
+    },
+    required: ["from", "to"],
+    additionalProperties: false,
+  },
+  annotations: READ_ONLY,
+  async run(args, ctx) {
+    const stations = await ctx.source.stations();
+    const from = resolveStation(stations, str(args, "from", true));
+    const to = resolveStation(stations, str(args, "to", true));
+    if (from.STATION_2CHAR === to.STATION_2CHAR) throw new InputError("The start and end stations are the same.");
+
+    const now = ctx.now();
+    const { cutoff, lateEvening } = tonightWindow(now);
+    const board = await ctx.source.boardWithStops(from.STATION_2CHAR);
+    const timed = (board.ITEMS ?? [])
+      .map((item) => ({ item, at: parseNjtTime(item.SCHED_DEP_DATE) }))
+      .filter((x): x is { item: ScheduleItem; at: number } => x.at !== undefined);
+    // Latest expected departure on the board (scheduled time plus any delay).
+    const lastListed = timed.reduce((m, x) => Math.max(m, x.at + secLate(x.item) * 1000), 0);
+    const tonight = timed.filter((x) => x.at < cutoff).sort((a, b) => b.at - a.at); // latest first
+
+    // Scan from the latest train backwards so stop-list lookups go to the trains that matter.
+    const found = await directTrips(ctx, tonight.map((x) => x.item), from.STATION_2CHAR, to.STATION_2CHAR, 8);
+    const cancelled = found.filter((t) => t.dep.cancelled);
+    const usable = found.filter((t) => !t.dep.cancelled).slice(0, 3);
+    const boardTooShort = lastListed > 0 && lastListed < cutoff && lastListed < lateEvening;
+
+    const header = `Last direct train tonight from ${from.STATIONNAME} (${from.STATION_2CHAR}) to ${to.STATIONNAME} (${to.STATION_2CHAR}):`;
+    const lines: string[] = [];
+    if (!usable.length) {
+      lines.push(
+        boardTooShort
+          ? `No direct trains found in what NJ Transit lists right now (through ${formatClock(lastListed)}).`
+          : "No more direct trains tonight.",
+      );
+    } else {
+      lines.push(tripLine(usable[0], now, ""));
+      if (usable.length > 1) {
+        lines.push("", "Earlier options:");
+        for (const t of usable.slice(1)) lines.push(tripLine(t, now, "- "));
+      }
+    }
+    const lastUsable = usable[0]?.depart ?? 0;
+    const laterCancelled = cancelled.filter((t) => (t.depart ?? 0) > lastUsable);
+    if (laterCancelled.length) {
+      lines.push("", `Cancelled: ${laterCancelled.map((t) => `Train ${t.dep.trainId} at ${t.dep.scheduled}`).join(", ")}.`);
+    }
+    if (boardTooShort) {
+      lines.push(
+        "",
+        `NJ Transit's board only lists trains through ${formatClock(lastListed)} right now, so there may be later ones. Ask again this evening for the real last train.`,
+      );
+    }
+    return text(`${header}\n${lines.join("\n")}\n\n${footer(ctx.source, now)}`, {
+      from: { code: from.STATION_2CHAR, name: from.STATIONNAME },
+      to: { code: to.STATION_2CHAR, name: to.STATIONNAME },
+      lastTrain: usable[0] ? tripData(usable[0]) : null,
+      earlier: usable.slice(1).map(tripData),
+      cancelled: laterCancelled.map((t) => t.dep.trainId),
+      mayBeLaterTrains: boardTooShort,
+      boardListsThrough: lastListed ? formatClock(lastListed) : null,
+      sampleData: ctx.source.mode === "mock",
+    });
+  },
+};
 
 const trainStatus: ToolDef = {
   name: "train_status",
@@ -463,7 +576,7 @@ const serviceAlerts: ToolDef = {
   },
 };
 
-export const TOOLS: ToolDef[] = [nextDepartures, planTrip, trainStatus, serviceAlerts, findStation];
+export const TOOLS: ToolDef[] = [nextDepartures, planTrip, lastTrain, trainStatus, serviceAlerts, findStation];
 
 /** Run a tool by name, turning expected problems into readable tool errors. */
 export async function callTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {

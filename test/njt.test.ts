@@ -121,3 +121,37 @@ test("NJ Transit errors become readable tool errors", async () => {
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /NJ Transit returned an error/);
 });
+
+test("last_train picks the last non-cancelled direct train before 3 AM", async () => {
+  const NIGHT = Date.parse("2026-11-19T02:00:00Z"); // 9:00 PM ET
+  const item = (time: string, id: string, status = "", late = "0") => ({
+    SCHED_DEP_DATE: time, DESTINATION: "Trenton", TRAIN_ID: id, LINE: "Northeast Corrdr", STATUS: status, SEC_LATE: late,
+    STOPS: [
+      { STATION_2CHAR: "NY", STATIONNAME: "New York Penn Station", TIME: time },
+      { STATION_2CHAR: "MP", STATIONNAME: "Metropark", TIME: time.replace(/:00:00/, ":45:00") },
+    ],
+  });
+  const { fetchFn } = fakeNjt({
+    getStationList: () => stations,
+    getTrainSchedule: () => ({
+      STATION_2CHAR: "NY",
+      STATIONNAME: "New York Penn Station",
+      ITEMS: [
+        item("18-Nov-2026 10:00:00 PM", "3891"),
+        item("18-Nov-2026 11:00:00 PM", "3893"),
+        item("19-Nov-2026 12:00:00 AM", "3895"),
+        item("19-Nov-2026 01:00:00 AM", "3897", "Cancelled"),
+        item("19-Nov-2026 04:00:00 AM", "3801"), // tomorrow's first train, past the cutoff
+      ],
+    }),
+  });
+  const ctx = { source: new NjtLiveSource({ njtToken: "t" }, { fetch: fetchFn, now: () => NIGHT }), now: () => NIGHT };
+  const r = await callTool("last_train", { from: "NY", to: "MP" }, ctx);
+  const s = r.structuredContent as { lastTrain: { trainId: string; departs: string }; earlier: { trainId: string }[]; cancelled: string[]; mayBeLaterTrains: boolean };
+  assert.equal(s.lastTrain.trainId, "3895");
+  assert.equal(s.lastTrain.departs, "12:00 AM");
+  assert.deepEqual(s.earlier.map((e) => e.trainId), ["3893", "3891"]);
+  assert.deepEqual(s.cancelled, ["3897"]);
+  assert.equal(s.mayBeLaterTrains, false);
+  assert.match(r.content[0].text, /Cancelled: Train 3897 at 1:00 AM/);
+});

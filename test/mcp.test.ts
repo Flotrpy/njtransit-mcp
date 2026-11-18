@@ -41,7 +41,7 @@ test("notifications get 202 with no body", async () => {
 test("tools/list returns all tools with schemas", async () => {
   const r = await rpc(app, { jsonrpc: "2.0", id: 3, method: "tools/list" });
   const names = r.body.result.tools.map((t: { name: string }) => t.name).sort();
-  assert.deepEqual(names, ["find_station", "next_departures", "plan_trip", "service_alerts", "train_status"]);
+  assert.deepEqual(names, ["find_station", "last_train", "next_departures", "plan_trip", "service_alerts", "train_status"]);
   for (const t of r.body.result.tools) {
     assert.equal(t.inputSchema.type, "object");
     assert.ok(t.description.length > 40);
@@ -128,4 +128,29 @@ test("unknown browser origins are refused", async () => {
   const body = { jsonrpc: "2.0", id: 1, method: "ping" };
   assert.equal((await rpc(app, body, "/mcp", { origin: "https://evil.example" })).status, 403);
   assert.equal((await rpc(app, body, "/mcp", { origin: "http://localhost:6274" })).status, 200);
+});
+
+test("last_train in the afternoon warns that later trains may exist", async () => {
+  const r = await call("last_train", { from: "Penn Station", to: "Metropark" });
+  const res = r.body.result;
+  assert.ok(!res.isError, res.content[0].text);
+  assert.ok(res.structuredContent.lastTrain, "should find a last train on the board");
+  assert.equal(res.structuredContent.mayBeLaterTrains, true);
+  assert.match(res.content[0].text, /may be later ones/);
+  // Earlier options really are earlier.
+  for (const e of res.structuredContent.earlier) assert.ok(e.trainId !== res.structuredContent.lastTrain.trainId);
+});
+
+test("last_train late at night stops at the 3 AM service-day cutoff", async () => {
+  const late = Date.parse("2026-11-19T04:30:00Z"); // 11:30 PM ET
+  const lateClock = () => late;
+  const lateApp = createApp(new MockSource({ now: lateClock }), {}, lateClock);
+  const r = await rpc(lateApp, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "last_train", arguments: { from: "NY", to: "Trenton" } } });
+  const res = r.body.result;
+  assert.ok(!res.isError, res.content[0].text);
+  assert.equal(res.structuredContent.mayBeLaterTrains, false);
+  assert.doesNotMatch(res.content[0].text, /may be later ones/);
+  const departs = res.structuredContent.lastTrain.departs as string;
+  // Before 3 AM: an hour of 12, 1 or 2 AM, or 11 PM.
+  assert.match(departs, /^(11:\d\d PM|12:\d\d AM|[12]:\d\d AM)$/);
 });
