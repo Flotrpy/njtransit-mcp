@@ -15,5 +15,6 @@ Code: GitHub repo `Flotrpy/njtransit-mcp` (branch `main`), with a copy in the pr
    - `npm test` must pass. Then `npm install` once and `npm run typecheck`.
    - Try it by hand: `npm run try -- <tool> '<json args>'`.
    - If `tools/list` changed, update the test that lists tool names and the Tools table in `README.md`.
-4. Record it: tick the item in `ROADMAP.md`, add a dated line to `CHANGELOG.md`, bump the patch version in `package.json` and `SERVER_VERSION` in `src/mcp.ts`.
-5. Commit to a new branch `feature/<short-name>` and push it, so Affan can look before merging, unless Affan has said the daily run may push straight to `main`. Also copy the changed files into `connectors/njtransit-mcp/` in the project files. Do NOT deploy or change any hosting settings unless Affan has said yes to that. Report one line: what was added and an example question it answers.
+4. Commit as Affan only: author and committer `Affan Shaik <100040591+Flotrpy@users.noreply.github.com>`, and no Co-Authored-By or other Claude credit in commit messages or PR text.
+5. Record it: tick the item in `ROADMAP.md`, add a dated line to `CHANGELOG.md`, bump the patch version in `package.json` and `SERVER_VERSION` in `src/mcp.ts`.
+6. Commit to a new branch `feature/<short-name>` and push it, so Affan can look before merging, unless Affan has said the daily run may push straight to `main`. Also copy the changed files into `connectors/njtransit-mcp/` in the project files. Do NOT deploy or change any hosting settings unless Affan has said yes to that. Report one line: what was added and an example question it answers.
