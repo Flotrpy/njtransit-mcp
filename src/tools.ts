@@ -3,7 +3,7 @@
 import { matchesLine, matchesText, resolveStation, searchStations, StationNotFound } from "./match.ts";
 import { NjtError } from "./njt.ts";
 import { etParts, etWallToEpoch, formatClock, formatDayClock, formatDuration, parseNjtTime, relativeMinutes } from "./time.ts";
-import type { RailSource, ScheduleItem, Stop, TrainStopList } from "./types.ts";
+import type { RailSource, ScheduleItem, Station, Stop, TrainStopList } from "./types.ts";
 
 export interface ToolResult {
   content: { type: "text"; text: string }[];
@@ -302,13 +302,109 @@ function tripData(t: DirectTrip) {
   };
 }
 
+/** Where people usually change trains, with the least time to allow for the change. */
+const TRANSFER_HUBS: { code: string; minChangeMin: number }[] = [
+  { code: "SE", minChangeMin: 5 },
+  { code: "NP", minChangeMin: 4 },
+];
+/** Don't suggest a change that leaves someone waiting longer than this. */
+const MAX_CONNECTION_MIN = 60;
+
+type TimedTrip = DirectTrip & { depart: number; arrive: number };
+
+interface TransferTrip {
+  hub: Station;
+  first: TimedTrip;
+  second: TimedTrip;
+  depart: number;
+  arrive: number;
+  connectionMin: number;
+}
+
+function timed(t: DirectTrip): t is TimedTrip {
+  return !t.dep.cancelled && t.depart !== undefined && t.arrive !== undefined;
+}
+
+/**
+ * Two-train trips via Secaucus or Newark Penn, for when no train goes all the way.
+ * Uses one extra board per hub (cached), so it stays light on NJ Transit's limits.
+ */
+async function transferTrips(
+  ctx: ToolContext,
+  fromItems: ScheduleItem[],
+  stations: Station[],
+  fromCode: string,
+  toCode: string,
+  maxTrips: number,
+): Promise<TransferTrip[]> {
+  const found: TransferTrip[] = [];
+  for (const h of TRANSFER_HUBS) {
+    if (h.code === fromCode || h.code === toCode) continue;
+    const hub = stations.find((s) => s.STATION_2CHAR === h.code);
+    if (!hub) continue;
+    const firsts = (await directTrips(ctx, fromItems, fromCode, h.code, 4)).filter(timed);
+    if (!firsts.length) continue;
+    let hubItems: ScheduleItem[];
+    try {
+      hubItems = (await ctx.source.boardWithStops(h.code)).ITEMS ?? [];
+    } catch {
+      continue;
+    }
+    const minChange = h.minChangeMin * 60_000;
+    const earliest = Math.min(...firsts.map((f) => f.arrive)) + minChange;
+    // Only trains leaving the hub after the first possible connection.
+    const later = hubItems.filter((it) => {
+      const at = parseNjtTime(it.SCHED_DEP_DATE);
+      return at === undefined || at + secLate(it) * 1000 >= earliest;
+    });
+    const seconds = (await directTrips(ctx, later, h.code, toCode, 8)).filter(timed);
+    for (const first of firsts) {
+      const second = seconds.find(
+        (s) =>
+          s.dep.trainId !== first.dep.trainId &&
+          s.depart >= first.arrive + minChange &&
+          s.depart - first.arrive <= MAX_CONNECTION_MIN * 60_000,
+      );
+      if (!second) continue;
+      found.push({
+        hub,
+        first,
+        second,
+        depart: first.depart,
+        arrive: second.arrive,
+        connectionMin: Math.round((second.depart - first.arrive) / 60_000),
+      });
+    }
+  }
+  // Several first trains can feed the same second train: keep the one that leaves latest (least waiting).
+  const best = new Map<string, TransferTrip>();
+  for (const t of found) {
+    const key = t.second.dep.trainId;
+    const cur = best.get(key);
+    if (!cur || t.depart > cur.depart || (t.depart === cur.depart && t.arrive < cur.arrive)) best.set(key, t);
+  }
+  return [...best.values()].sort((a, b) => a.arrive - b.arrive || b.depart - a.depart).slice(0, maxTrips);
+}
+
+function transferLine(t: TransferTrip, now: number, label: string): string {
+  const f = t.first;
+  const s = t.second;
+  const head =
+    `${label}Leave ${formatClock(t.depart)} (${relativeMinutes(t.depart, now)}) → arrive ${formatClock(t.arrive)}` +
+    ` · ${formatDuration(t.arrive - t.depart)} · change at ${t.hub.STATIONNAME} (${t.hub.STATION_2CHAR}), ${t.connectionMin} min to connect`;
+  const leg1 = `Train ${f.dep.trainId} (${f.dep.line}) · ${f.dep.track ? `Track ${f.dep.track}` : "Track not posted yet"} · ${f.dep.status} · gets to ${t.hub.STATION_2CHAR} ${formatClock(f.arrive)}`;
+  const leg2 = `then Train ${s.dep.trainId} (${s.dep.line}) at ${formatClock(s.depart)} · ${s.dep.status}`;
+  return `${head}\n   ${leg1}\n   ${leg2}`;
+}
+
 const planTrip: ToolDef = {
   name: "plan_trip",
   title: "Direct NJ Transit trains between two stations",
   description:
     "Find the next direct NJ Transit trains from one station to another, with departure and arrival times " +
     "(Eastern), trip length, track and delays. Use for questions like \"when's the next train from Metropark " +
-    "to New York?\". Only lists one-seat rides; if none run, it says so and suggests a transfer point.",
+    "to New York?\". Lists one-seat rides; when none run, it plans trips with one change at Secaucus or " +
+    "Newark Penn, with the connection time.",
   inputSchema: {
     type: "object",
     properties: {
@@ -335,11 +431,34 @@ const planTrip: ToolDef = {
 
     const header = `Direct trains from ${from.STATIONNAME} (${from.STATION_2CHAR}) to ${to.STATIONNAME} (${to.STATION_2CHAR}):`;
     if (!trips.length) {
-      const hub = ["SE", "NP", "NY"].filter((c) => c !== from.STATION_2CHAR && c !== to.STATION_2CHAR);
-      const hint = hub.length ? ` You may need to change trains; Secaucus (SE) and Newark Penn (NP) are the usual transfer points.` : "";
+      const none = `No direct trains found in the next ${items.length} departures from ${from.STATIONNAME}.`;
+      const transfers = await transferTrips(ctx, items, stations, from.STATION_2CHAR, to.STATION_2CHAR, Math.min(limit, 3));
+      const base = {
+        from: { code: from.STATION_2CHAR, name: from.STATIONNAME },
+        to: { code: to.STATION_2CHAR, name: to.STATIONNAME },
+        trips: [],
+        sampleData: ctx.source.mode === "mock",
+      };
+      if (!transfers.length) {
+        return text(
+          `${header}\n${none} No trip with one change at Secaucus (SE) or Newark Penn (NP) turned up either.\n\n${footer(ctx.source, now)}`,
+          { ...base, transfers: [] },
+        );
+      }
+      const tlines = transfers.map((t, i) => transferLine(t, now, `${i + 1}. `));
       return text(
-        `${header}\nNo direct trains found in the next ${items.length} departures from ${from.STATIONNAME}.${hint}\n\n${footer(ctx.source, now)}`,
-        { from: from.STATION_2CHAR, to: to.STATION_2CHAR, trips: [], sampleData: ctx.source.mode === "mock" },
+        `${header}\n${none}\n\nTrips with one change:\n${tlines.join("\n")}\n\n${footer(ctx.source, now)}`,
+        {
+          ...base,
+          transfers: transfers.map((t) => ({
+            change: { code: t.hub.STATION_2CHAR, name: t.hub.STATIONNAME },
+            departs: formatClock(t.depart),
+            arrives: formatClock(t.arrive),
+            minutes: Math.round((t.arrive - t.depart) / 60000),
+            connectionMinutes: t.connectionMin,
+            legs: [tripData(t.first), tripData(t.second)],
+          })),
+        },
       );
     }
     const lines = trips.map((t, i) => tripLine(t, now, `${i + 1}. `));

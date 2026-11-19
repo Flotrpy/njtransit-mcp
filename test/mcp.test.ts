@@ -88,9 +88,31 @@ test("plan_trip finds direct trains with arrival after departure", async () => {
   for (const t of trips) assert.ok(t.minutes > 0 && t.minutes < 120);
 });
 
-test("plan_trip explains when there is no one-seat ride", async () => {
+test("plan_trip offers trips with one change when there is no one-seat ride", async () => {
   const r = await call("plan_trip", { from: "Red Bank", to: "Dover" });
-  assert.match(r.body.result.content[0].text, /No direct trains/);
+  const text = r.body.result.content[0].text;
+  assert.match(text, /No direct trains/);
+  assert.match(text, /Trips with one change/);
+  const transfers = r.body.result.structuredContent.transfers;
+  assert.ok(transfers.length > 0 && transfers.length <= 3, text);
+  for (const t of transfers) {
+    assert.equal(t.change.code, "SE");
+    assert.ok(t.connectionMinutes >= 5 && t.connectionMinutes <= 60);
+    assert.equal(t.legs.length, 2);
+    assert.notEqual(t.legs[0].trainId, t.legs[1].trainId);
+    assert.ok(t.minutes > 0);
+  }
+  // Soonest arrival first, and no second train offered twice.
+  const ids = transfers.map((t: { legs: { trainId: string }[] }) => t.legs[1].trainId);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test("plan_trip plans a change only when no direct train runs", async () => {
+  const r = await call("plan_trip", { from: "Metropark", to: "Summit" });
+  assert.ok(r.body.result.structuredContent.transfers.length > 0);
+  const direct = await call("plan_trip", { from: "Metropark", to: "Trenton" });
+  assert.ok(direct.body.result.structuredContent.trips.length > 0);
+  assert.equal(direct.body.result.structuredContent.transfers, undefined);
 });
 
 test("train_status lists stops", async () => {

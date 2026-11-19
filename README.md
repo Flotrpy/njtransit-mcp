@@ -20,7 +20,7 @@ data**, so you can try everything before signing up.
 | Tool | What it answers |
 | --- | --- |
 | `next_departures` | Live board for a station: times, track, delay, cancellations, crowding. Filter by line or destination. |
-| `plan_trip` | Next direct trains from A to B with leave/arrive times and trip length. Says when you need to transfer. |
+| `plan_trip` | Next direct trains from A to B with leave/arrive times and trip length. When none run, trips with one change at Secaucus or Newark Penn, with the connection time. |
 | `last_train` | The last direct train tonight from A to B, plus two backups. Says if NJ Transit's board doesn't reach late enough yet. |
 | `train_status` | One train's stops, which it has left, where it is now, late or not, how full. |
 | `service_alerts` | Current alerts, system-wide or for a station or line. |
@@ -43,7 +43,7 @@ Needs Node.js 22.18 or newer (runs the TypeScript directly, no build step).
 
 ```bash
 cd njtransit-mcp
-npm test                                   # 32 tests
+npm test                                   # 33 tests
 npm run try -- next_departures '{"station":"secaucus"}'
 npm run try -- plan_trip '{"from":"metropark","to":"penn station"}'
 npm start                                  # MCP server at http://127.0.0.1:8787/mcp
