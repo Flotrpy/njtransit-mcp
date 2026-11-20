@@ -27,6 +27,28 @@ export interface Stop {
   STOP_LINES?: StopLine[];
 }
 
+/** One car of a train (field names from the raildata client; not yet checked against a live answer). */
+export interface CapacityCar {
+  CAR_NO?: string;
+  /** 1 is the front of the train. */
+  CAR_POSITION?: string | number;
+  /** Whether the car has a restroom ("Y"/"N" or true/false). */
+  CAR_REST?: string | boolean;
+  CUR_PERCENTAGE?: string | number;
+  CUR_CAPACITY_COLOR?: string;
+  CUR_PASSENGER_COUNT?: string | number;
+}
+
+/** Front, middle or back of a train, with its cars. */
+export interface CapacitySection {
+  /** 0/1/2 or "Front"/"Middle"/"Back". */
+  SECTION_POSITION?: string | number;
+  CUR_PERCENTAGE?: string | number;
+  CUR_CAPACITY_COLOR?: string;
+  CUR_PASSENGER_COUNT?: string | number;
+  CARS?: CapacityCar[];
+}
+
 export interface Capacity {
   VEHICLE_NO?: string;
   CREATED_TIME?: string;
@@ -34,6 +56,7 @@ export interface Capacity {
   CUR_PERCENTAGE?: string;
   CUR_CAPACITY_COLOR?: string;
   CUR_PASSENGER_COUNT?: string;
+  SECTIONS?: CapacitySection[];
 }
 
 export interface ScheduleItem {

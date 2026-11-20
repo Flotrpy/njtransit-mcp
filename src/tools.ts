@@ -3,7 +3,7 @@
 import { matchesLine, matchesText, resolveStation, searchStations, StationNotFound } from "./match.ts";
 import { NjtError } from "./njt.ts";
 import { etParts, etWallToEpoch, formatClock, formatDayClock, formatDuration, parseNjtTime, relativeMinutes } from "./time.ts";
-import type { RailSource, ScheduleItem, Station, Stop, TrainStopList } from "./types.ts";
+import type { Capacity, RailSource, ScheduleItem, Station, Stop, TrainStopList } from "./types.ts";
 
 export interface ToolResult {
   content: { type: "text"; text: string }[];
@@ -566,12 +566,102 @@ const lastTrain: ToolDef = {
   },
 };
 
+const SECTION_NAMES = ["front", "middle", "back"] as const;
+type SectionName = (typeof SECTION_NAMES)[number];
+
+function sectionName(pos: string | number | undefined): SectionName | null {
+  if (pos === undefined || pos === null) return null;
+  const s = String(pos).trim().toLowerCase();
+  if (s === "0" || s.startsWith("front") || s.startsWith("first")) return "front";
+  if (s === "1" || s.startsWith("mid")) return "middle";
+  if (s === "2" || s.startsWith("back") || s.startsWith("rear") || s.startsWith("last")) return "back";
+  return null;
+}
+
+function pctOf(v: string | number | undefined): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
+interface CarCrowding {
+  sections: { section: SectionName; percent: number }[];
+  emptiest: SectionName | null;
+  /** True when the ends differ by less than 10 points, so it doesn't matter where you board. */
+  even: boolean;
+  emptiestCars: { position: number; percent: number }[];
+  restroomCars: number[];
+}
+
+/**
+ * Which part of the train is emptiest, from NJ Transit's per-section and per-car counts.
+ * Returns null when NJ Transit doesn't report sections for this train.
+ */
+export function carCrowding(cap?: Capacity[]): CarCrowding | null {
+  const sectionsRaw = (cap ?? []).flatMap((c) => c.SECTIONS ?? []);
+  if (!sectionsRaw.length) return null;
+  const bySection = new Map<SectionName, number[]>();
+  const cars: { position: number; percent: number | null; restroom: boolean }[] = [];
+  for (const sec of sectionsRaw) {
+    const name = sectionName(sec.SECTION_POSITION);
+    const carList = sec.CARS ?? [];
+    const carPcts = carList.map((c) => pctOf(c.CUR_PERCENTAGE)).filter((n): n is number => n !== null);
+    const pct = pctOf(sec.CUR_PERCENTAGE) ?? (carPcts.length ? Math.round(carPcts.reduce((a, b) => a + b, 0) / carPcts.length) : null);
+    if (name && pct !== null) bySection.set(name, [...(bySection.get(name) ?? []), pct]);
+    for (const c of carList) {
+      const position = Number(c.CAR_POSITION);
+      if (!Number.isFinite(position)) continue;
+      cars.push({ position, percent: pctOf(c.CUR_PERCENTAGE), restroom: c.CAR_REST === true || /^(y|yes|true|1)$/i.test(String(c.CAR_REST ?? "")) });
+    }
+  }
+  const sections = SECTION_NAMES.filter((n) => bySection.has(n)).map((n) => {
+    const v = bySection.get(n)!;
+    return { section: n, percent: Math.round(v.reduce((a, b) => a + b, 0) / v.length) };
+  });
+  if (!sections.length && !cars.length) return null;
+  const sorted = [...sections].sort((a, b) => a.percent - b.percent);
+  const even = sorted.length < 2 || sorted[sorted.length - 1].percent - sorted[0].percent < 10;
+  const emptiestCars = cars
+    .filter((c): c is { position: number; percent: number; restroom: boolean } => c.percent !== null)
+    .sort((a, b) => a.percent - b.percent || a.position - b.position)
+    .slice(0, 2)
+    .map(({ position, percent }) => ({ position, percent }));
+  return {
+    sections,
+    emptiest: sorted.length ? sorted[0].section : null,
+    even,
+    emptiestCars,
+    restroomCars: cars.filter((c) => c.restroom).map((c) => c.position).sort((a, b) => a - b),
+  };
+}
+
+function carCrowdingText(c: CarCrowding): string {
+  const parts: string[] = [];
+  if (c.sections.length >= 2) {
+    const others = c.sections.filter((s) => s.section !== c.emptiest).map((s) => `${s.section} ${s.percent}%`).join(", ");
+    const best = c.sections.find((s) => s.section === c.emptiest)!;
+    parts.push(
+      c.even
+        ? `About evenly full along the train (${c.sections.map((s) => `${s.section} ${s.percent}%`).join(", ")}).`
+        : `Emptiest at the ${best.section} of the train (about ${best.percent}% full; ${others}).`,
+    );
+  }
+  if (c.emptiestCars.length) {
+    parts.push(
+      `Emptiest cars, counting from the front: ${c.emptiestCars.map((x) => `car ${x.position} (${x.percent}%)`).join(", ")}.`,
+    );
+  }
+  if (c.restroomCars.length) parts.push(`Restrooms in car${c.restroomCars.length > 1 ? "s" : ""} ${c.restroomCars.join(", ")}.`);
+  return parts.join(" ");
+}
+
 const trainStatus: ToolDef = {
   name: "train_status",
   title: "Where is my NJ Transit train?",
   description:
     "Track one NJ Transit train by its number: every stop with times (Eastern), which stops it has already " +
-    "left, where it is now, whether it's late or cancelled, and how crowded it is when reported. " +
+    "left, where it is now, whether it's late or cancelled, and how crowded it is when reported, including " +
+    "which end of the train has the most empty seats. " +
     "Get the train number from next_departures or plan_trip.",
   inputSchema: {
     type: "object",
@@ -601,6 +691,7 @@ const trainStatus: ToolDef = {
     const next = stops[lastDeparted + 1];
     const late = stops.some((s) => /late/i.test(s.STOP_STATUS ?? ""));
     const pct = crowding(t.CAPACITY);
+    const byCar = cancelled ? null : carCrowding(t.CAPACITY);
 
     let where: string;
     if (cancelled) where = "This train is cancelled.";
@@ -615,6 +706,7 @@ const trainStatus: ToolDef = {
       where,
       !cancelled ? (late ? "Running late." : "Running on time.") : "",
       pct != null ? `Crowding: about ${pct}% full (${crowdingWord(pct)}).` : "",
+      byCar ? carCrowdingText(byCar) : "",
     ].filter(Boolean);
 
     const stopLines = stops.map((s, i) => {
@@ -630,6 +722,7 @@ const trainStatus: ToolDef = {
       cancelled,
       late,
       crowdingPercent: pct,
+      crowdingByCar: byCar,
       nextStop: next ? next.STATIONNAME : null,
       stops: stops.map((s) => {
         const tm = stopTime(s);

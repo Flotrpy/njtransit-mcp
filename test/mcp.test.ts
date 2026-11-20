@@ -115,6 +115,18 @@ test("plan_trip plans a change only when no direct train runs", async () => {
   assert.equal(direct.body.result.structuredContent.transfers, undefined);
 });
 
+test("train_status says which end of the train is emptiest", async () => {
+  const dep = await call("next_departures", { station: "NY", limit: 3 });
+  const live = dep.body.result.structuredContent.departures.find((d: { cancelled: boolean }) => !d.cancelled);
+  const r = await call("train_status", { train_id: live.trainId });
+  const byCar = r.body.result.structuredContent.crowdingByCar;
+  assert.equal(byCar.sections.length, 3);
+  const min = Math.min(...byCar.sections.map((s: { percent: number }) => s.percent));
+  assert.equal(byCar.sections.find((s: { section: string }) => s.section === byCar.emptiest).percent, min);
+  assert.deepEqual(byCar.restroomCars, [2, 6]);
+  assert.match(r.body.result.content[0].text, /Emptiest cars, counting from the front/);
+});
+
 test("train_status lists stops", async () => {
   const dep = await call("next_departures", { station: "NY", limit: 1 });
   const id = dep.body.result.structuredContent.departures[0].trainId;

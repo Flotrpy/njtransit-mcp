@@ -5,6 +5,7 @@
 
 import { formatNjtTime } from "./time.ts";
 import type {
+  CapacitySection,
   RailSource,
   ScheduleItem,
   Station,
@@ -102,6 +103,26 @@ function hash(n: number): number {
   x = Math.imul(x ^ (x >>> 15), 0x2c1b3c6d) >>> 0;
   x = Math.imul(x ^ (x >>> 12), 0x297a2d39) >>> 0;
   return (x ^ (x >>> 15)) >>> 0;
+}
+
+/**
+ * Per-car crowding for a sample train: 8 cars (front 1-3, middle 4-5, back 6-8).
+ * Crowding leans toward one end, like real trains near the station exits.
+ */
+function mockSections(trip: Trip): CapacitySection[] {
+  const h = hash(Number(trip.id) * 31 + trip.stops[0].at / 60_000);
+  const fullEnd = h % 2 === 0 ? 1 : 8; // the car nearest the busy end
+  const spread = 20 + (h % 30);
+  const groups: [string, number[]][] = [["Front", [1, 2, 3]], ["Middle", [4, 5]], ["Back", [6, 7, 8]]];
+  return groups.map(([name, nums]) => {
+    const cars = nums.map((n) => {
+      const lean = spread * (1 - Math.abs(n - fullEnd) / 7) - spread / 2;
+      const pct = Math.max(3, Math.min(100, Math.round(trip.crowding + lean + ((h >> n) % 7) - 3)));
+      return { CAR_NO: String(7000 + ((h + n * 13) % 900)), CAR_POSITION: String(n), CAR_REST: n === 2 || n === 6 ? "Y" : "N", CUR_PERCENTAGE: String(pct) };
+    });
+    const avg = Math.round(cars.reduce((a, c) => a + Number(c.CUR_PERCENTAGE), 0) / cars.length);
+    return { SECTION_POSITION: name, CUR_PERCENTAGE: String(avg), CARS: cars };
+  });
 }
 
 export class MockSource implements RailSource {
@@ -250,7 +271,7 @@ export class MockSource implements RailSource {
       LINECODE: trip.line.code,
       DESTINATION: trip.stops[trip.stops.length - 1].name,
       STOPS: this.toStops(trip),
-      CAPACITY: [{ CUR_PERCENTAGE: String(trip.crowding), VEHICLE_TYPE: "Multilevel" }],
+      CAPACITY: [{ CUR_PERCENTAGE: String(trip.crowding), VEHICLE_TYPE: "Multilevel", SECTIONS: mockSections(trip) }],
     };
   }
 

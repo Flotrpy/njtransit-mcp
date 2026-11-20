@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.3 (Nov 20, 2026)
+- `train_status` now says which end of the train is emptiest (front, middle or back), the two emptiest cars counted from the front, and which cars have restrooms, when NJ Transit reports per-car counts. Sample trains have 8 cars with made-up counts.
+
 ## 0.1.2 (Nov 19, 2026)
 - `plan_trip` now plans trips with one change when no train goes all the way: it tries Secaucus (SE) and Newark Penn (NP), allows at least 5 and 4 minutes to change, skips cancelled trains and waits over an hour, and shows the soonest arrivals first with the connection time.
 
