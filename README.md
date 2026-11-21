@@ -7,6 +7,7 @@ Ask Claude things like:
 - "What's the last train home from Penn Station to Metropark tonight?"
 - "Where is train 3847 right now?"
 - "Any Northeast Corridor delays?"
+- "What are my trains today?" (with your commute saved)
 
 and get answers from NJ Transit's live rail data, with every time in Eastern.
 
@@ -21,6 +22,7 @@ data**, so you can try everything before signing up.
 | --- | --- |
 | `next_departures` | Live board for a station: times, track, delay, cancellations, crowding. Filter by line or destination. |
 | `plan_trip` | Next direct trains from A to B with leave/arrive times and trip length. When none run, trips with one change at Secaucus or Newark Penn, with the connection time. |
+| `my_commute` | Your commute both ways in one answer, from saved home and destination stations (or any two you name). |
 | `last_train` | The last direct train tonight from A to B, plus two backups. Says if NJ Transit's board doesn't reach late enough yet. |
 | `train_status` | One train's stops, which it has left, where it is now, late or not, how full, and which end of the train is emptiest. |
 | `service_alerts` | Current alerts, system-wide or for a station or line. |
@@ -43,7 +45,7 @@ Needs Node.js 22.18 or newer (runs the TypeScript directly, no build step).
 
 ```bash
 cd njtransit-mcp
-npm test                                   # 36 tests
+npm test                                   # 39 tests
 npm run try -- next_departures '{"station":"secaucus"}'
 npm run try -- plan_trip '{"from":"metropark","to":"penn station"}'
 npm start                                  # MCP server at http://127.0.0.1:8787/mcp
@@ -123,6 +125,7 @@ In Claude: **Settings → Connectors → Add custom connector**, paste your conn
 | `MCP_ACCESS_KEY` | Recommended when public | Requires `/mcp/<key>` in the URL (or `Authorization: Bearer <key>`). |
 | `NJT_USE_TEST_API` | No | `true` to use NJ Transit's test server. |
 | `MOCK_MODE` | No | `true` forces sample data even with credentials. |
+| `COMMUTE_HOME`, `COMMUTE_AWAY` | No | Station names for `my_commute`, e.g. `Metropark` and `New York Penn`. `COMMUTE_SCHOOL` works in place of `COMMUTE_AWAY`. |
 | `ALLOWED_ORIGINS` | No | Extra browser origins allowed to call the server, comma-separated. |
 | `PORT`, `HOST` | Node only | Where `npm start` listens (default `127.0.0.1:8787`). |
 

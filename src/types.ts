@@ -137,5 +137,8 @@ export interface Config {
   forceMock?: boolean;
   accessKey?: string;
   allowedOrigins?: string[];
+  /** Commute stations for my_commute (names or codes, as typed). */
+  commuteHome?: string;
+  commuteAway?: string;
   kv?: KVLike;
 }

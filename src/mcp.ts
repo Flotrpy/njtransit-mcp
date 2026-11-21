@@ -8,7 +8,7 @@ import { callTool, TOOLS, type ToolContext } from "./tools.ts";
 import type { Config, RailSource } from "./types.ts";
 
 export const SERVER_NAME = "njtransit-trains";
-export const SERVER_VERSION = "0.1.3";
+export const SERVER_VERSION = "0.1.4";
 const SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const LATEST = SUPPORTED_VERSIONS[0];
 
@@ -76,7 +76,7 @@ export interface App {
 }
 
 export function createApp(source: RailSource, cfg: Config, now: () => number = Date.now): App {
-  const ctx: ToolContext = { source, now };
+  const ctx: ToolContext = { source, now, commute: { home: cfg.commuteHome, away: cfg.commuteAway } };
 
   async function handleMessage(msg: JsonRpcRequest): Promise<JsonRpcResponse | null> {
     const isNotification = msg.id === undefined;

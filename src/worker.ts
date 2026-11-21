@@ -11,6 +11,8 @@ interface Env {
   MOCK_MODE?: string;
   MCP_ACCESS_KEY?: string;
   ALLOWED_ORIGINS?: string;
+  COMMUTE_HOME?: string;
+  COMMUTE_AWAY?: string;
   /** Optional KV namespace that keeps the NJ Transit token across restarts. */
   CACHE?: KVLike;
 }

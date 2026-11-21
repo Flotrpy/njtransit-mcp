@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../src/mcp.ts";
 import { MockSource } from "../src/mock.ts";
+import { readConfig } from "../src/config.ts";
 
 const NOW = Date.parse("2026-11-18T22:00:00Z"); // 5:00 PM ET
 const clock = () => NOW;
@@ -41,7 +42,7 @@ test("notifications get 202 with no body", async () => {
 test("tools/list returns all tools with schemas", async () => {
   const r = await rpc(app, { jsonrpc: "2.0", id: 3, method: "tools/list" });
   const names = r.body.result.tools.map((t: { name: string }) => t.name).sort();
-  assert.deepEqual(names, ["find_station", "last_train", "next_departures", "plan_trip", "service_alerts", "train_status"]);
+  assert.deepEqual(names, ["find_station", "last_train", "my_commute", "next_departures", "plan_trip", "service_alerts", "train_status"]);
   for (const t of r.body.result.tools) {
     assert.equal(t.inputSchema.type, "object");
     assert.ok(t.description.length > 40);
@@ -187,4 +188,34 @@ test("last_train late at night stops at the 3 AM service-day cutoff", async () =
   const departs = res.structuredContent.lastTrain.departs as string;
   // Before 3 AM: an hour of 12, 1 or 2 AM, or 11 PM.
   assert.match(departs, /^(11:\d\d PM|12:\d\d AM|[12]:\d\d AM)$/);
+});
+
+test("my_commute shows both directions, trip home first in the evening", async () => {
+  const r = await call("my_commute", { home: "metropark", away: "penn station" });
+  assert.ok(!r.body.result.isError, r.body.result.content[0].text);
+  const s = r.body.result.structuredContent;
+  assert.equal(s.home.code, "MP");
+  assert.equal(s.away.code, "NY");
+  assert.equal(s.homeFirst, true); // the test clock is 5 PM Eastern
+  assert.ok(s.toAway.trips.length > 0 && s.toAway.trips.length <= 3);
+  assert.ok(s.toHome.trips.length > 0);
+  const text = r.body.result.content[0].text;
+  assert.ok(text.indexOf("Home to Metropark") < text.indexOf("To New York Penn Station"));
+});
+
+test("my_commute uses the saved stations and explains when none are saved", async () => {
+  const saved = createApp(new MockSource({ now: clock }), { commuteHome: "Red Bank", commuteAway: "Dover" }, clock);
+  const r = await rpc(saved, { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "my_commute", arguments: {} } });
+  const s = r.body.result.structuredContent;
+  assert.equal(s.home.code, "RB");
+  assert.ok(s.toAway.transfers.length > 0, "Red Bank to Dover needs a change");
+  const none = await call("my_commute", {});
+  assert.equal(none.body.result.isError, true);
+  assert.match(none.body.result.content[0].text, /COMMUTE_HOME/);
+});
+
+test("readConfig takes COMMUTE_SCHOOL when COMMUTE_AWAY isn't set", () => {
+  const cfg = readConfig({ COMMUTE_HOME: "Metropark", COMMUTE_SCHOOL: "Princeton Junction" });
+  assert.equal(cfg.commuteHome, "Metropark");
+  assert.equal(cfg.commuteAway, "Princeton Junction");
 });

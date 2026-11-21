@@ -28,6 +28,8 @@ export interface ToolDef {
 export interface ToolContext {
   source: RailSource;
   now: () => number;
+  /** Saved commute stations (COMMUTE_HOME / COMMUTE_AWAY), as typed. */
+  commute?: { home?: string; away?: string };
 }
 
 /** Thrown for bad input; turned into a tool error the model can read and fix. */
@@ -422,50 +424,115 @@ const planTrip: ToolDef = {
     const to = resolveStation(stations, str(args, "to", true));
     const limit = int(args, "limit", 5, 1, 10);
     if (from.STATION_2CHAR === to.STATION_2CHAR) throw new InputError("The start and end stations are the same.");
+    const plan = await planBetween(ctx, stations, from, to, limit);
+    return text(`${plan.header}\n${plan.body}\n\n${footer(ctx.source, ctx.now())}`, {
+      ...plan.data,
+      sampleData: ctx.source.mode === "mock",
+    });
+  },
+};
 
-    const board = await ctx.source.boardWithStops(from.STATION_2CHAR);
-    const now = ctx.now();
-    const items = board.ITEMS ?? [];
+interface Plan {
+  header: string;
+  body: string;
+  data: Record<string, unknown>;
+}
 
-    const trips = await directTrips(ctx, items, from.STATION_2CHAR, to.STATION_2CHAR, limit);
+/** Direct trains from one station to another, or trips with one change when none run. */
+async function planBetween(ctx: ToolContext, stations: Station[], from: Station, to: Station, limit: number): Promise<Plan> {
+  const board = await ctx.source.boardWithStops(from.STATION_2CHAR);
+  const now = ctx.now();
+  const items = board.ITEMS ?? [];
+  const ends = {
+    from: { code: from.STATION_2CHAR, name: from.STATIONNAME },
+    to: { code: to.STATION_2CHAR, name: to.STATIONNAME },
+  };
+  const header = `Direct trains from ${from.STATIONNAME} (${from.STATION_2CHAR}) to ${to.STATIONNAME} (${to.STATION_2CHAR}):`;
 
-    const header = `Direct trains from ${from.STATIONNAME} (${from.STATION_2CHAR}) to ${to.STATIONNAME} (${to.STATION_2CHAR}):`;
-    if (!trips.length) {
-      const none = `No direct trains found in the next ${items.length} departures from ${from.STATIONNAME}.`;
-      const transfers = await transferTrips(ctx, items, stations, from.STATION_2CHAR, to.STATION_2CHAR, Math.min(limit, 3));
-      const base = {
-        from: { code: from.STATION_2CHAR, name: from.STATIONNAME },
-        to: { code: to.STATION_2CHAR, name: to.STATIONNAME },
-        trips: [],
-        sampleData: ctx.source.mode === "mock",
-      };
-      if (!transfers.length) {
-        return text(
-          `${header}\n${none} No trip with one change at Secaucus (SE) or Newark Penn (NP) turned up either.\n\n${footer(ctx.source, now)}`,
-          { ...base, transfers: [] },
-        );
-      }
-      const tlines = transfers.map((t, i) => transferLine(t, now, `${i + 1}. `));
-      return text(
-        `${header}\n${none}\n\nTrips with one change:\n${tlines.join("\n")}\n\n${footer(ctx.source, now)}`,
-        {
-          ...base,
-          transfers: transfers.map((t) => ({
-            change: { code: t.hub.STATION_2CHAR, name: t.hub.STATIONNAME },
-            departs: formatClock(t.depart),
-            arrives: formatClock(t.arrive),
-            minutes: Math.round((t.arrive - t.depart) / 60000),
-            connectionMinutes: t.connectionMin,
-            legs: [tripData(t.first), tripData(t.second)],
-          })),
-        },
+  const trips = await directTrips(ctx, items, from.STATION_2CHAR, to.STATION_2CHAR, limit);
+  if (trips.length) {
+    return { header, body: trips.map((t, i) => tripLine(t, now, `${i + 1}. `)).join("\n"), data: { ...ends, trips: trips.map(tripData) } };
+  }
+  const none = `No direct trains found in the next ${items.length} departures from ${from.STATIONNAME}.`;
+  const transfers = await transferTrips(ctx, items, stations, from.STATION_2CHAR, to.STATION_2CHAR, Math.min(limit, 3));
+  if (!transfers.length) {
+    return {
+      header,
+      body: `${none} No trip with one change at Secaucus (SE) or Newark Penn (NP) turned up either.`,
+      data: { ...ends, trips: [], transfers: [] },
+    };
+  }
+  const tlines = transfers.map((t, i) => transferLine(t, now, `${i + 1}. `));
+  return {
+    header,
+    body: `${none}\n\nTrips with one change:\n${tlines.join("\n")}`,
+    data: {
+      ...ends,
+      trips: [],
+      transfers: transfers.map((t) => ({
+        change: { code: t.hub.STATION_2CHAR, name: t.hub.STATIONNAME },
+        departs: formatClock(t.depart),
+        arrives: formatClock(t.arrive),
+        minutes: Math.round((t.arrive - t.depart) / 60000),
+        connectionMinutes: t.connectionMin,
+        legs: [tripData(t.first), tripData(t.second)],
+      })),
+    },
+  };
+}
+
+const myCommute: ToolDef = {
+  name: "my_commute",
+  title: "My NJ Transit commute, both ways",
+  description:
+    "The next NJ Transit trains for the person's regular commute, both directions in one answer: from home to " +
+    "their usual destination and back (times in Eastern). Uses the home and destination stations saved on the " +
+    "server (COMMUTE_HOME and COMMUTE_AWAY); pass home and away to use other stations. In the morning the " +
+    "trip away from home comes first; after noon the trip home comes first.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      home: { type: "string", description: "Home station name or code. Defaults to the saved home station." },
+      away: { type: "string", description: "Destination station (school, work). Defaults to the saved one." },
+      limit: { type: "integer", minimum: 1, maximum: 5, description: "Trains to show each way (default 3)." },
+    },
+    additionalProperties: false,
+  },
+  annotations: READ_ONLY,
+  async run(args, ctx) {
+    const homeQ = str(args, "home") ?? ctx.commute?.home;
+    const awayQ = str(args, "away") ?? ctx.commute?.away;
+    if (!homeQ || !awayQ) {
+      const missing = [!homeQ && "home", !awayQ && "away"].filter(Boolean).join(" and ");
+      throw new InputError(
+        `The commute needs a ${missing} station. Pass ${missing} (station names), or set COMMUTE_HOME and ` +
+          "COMMUTE_AWAY on the server.",
       );
     }
-    const lines = trips.map((t, i) => tripLine(t, now, `${i + 1}. `));
-    return text(`${header}\n${lines.join("\n")}\n\n${footer(ctx.source, now)}`, {
-      from: { code: from.STATION_2CHAR, name: from.STATIONNAME },
-      to: { code: to.STATION_2CHAR, name: to.STATIONNAME },
-      trips: trips.map(tripData),
+    const limit = int(args, "limit", 3, 1, 5);
+    const stations = await ctx.source.stations();
+    const home = resolveStation(stations, homeQ);
+    const away = resolveStation(stations, awayQ);
+    if (home.STATION_2CHAR === away.STATION_2CHAR) throw new InputError("The home and away stations are the same.");
+
+    const now = ctx.now();
+    const homeFirst = etParts(now).hour >= 12;
+    const [outbound, inbound] = await Promise.all([
+      planBetween(ctx, stations, home, away, limit),
+      planBetween(ctx, stations, away, home, limit),
+    ]);
+    const sections = [
+      { title: `To ${away.STATIONNAME} (from ${home.STATIONNAME}):`, plan: outbound },
+      { title: `Home to ${home.STATIONNAME} (from ${away.STATIONNAME}):`, plan: inbound },
+    ];
+    if (homeFirst) sections.reverse();
+    const body = sections.map((s) => `${s.title}\n${s.plan.body}`).join("\n\n");
+    return text(`Your commute, ${home.STATIONNAME} ⇄ ${away.STATIONNAME}\n\n${body}\n\n${footer(ctx.source, now)}`, {
+      home: { code: home.STATION_2CHAR, name: home.STATIONNAME },
+      away: { code: away.STATION_2CHAR, name: away.STATIONNAME },
+      homeFirst,
+      toAway: outbound.data,
+      toHome: inbound.data,
       sampleData: ctx.source.mode === "mock",
     });
   },
@@ -788,7 +855,7 @@ const serviceAlerts: ToolDef = {
   },
 };
 
-export const TOOLS: ToolDef[] = [nextDepartures, planTrip, lastTrain, trainStatus, serviceAlerts, findStation];
+export const TOOLS: ToolDef[] = [nextDepartures, planTrip, myCommute, lastTrain, trainStatus, serviceAlerts, findStation];
 
 /** Run a tool by name, turning expected problems into readable tool errors. */
 export async function callTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {

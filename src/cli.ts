@@ -18,6 +18,10 @@ if (name === "token") {
   console.log(await src.freshToken());
   process.exit(0);
 }
-const result = await callTool(name, rawArgs ? JSON.parse(rawArgs) : {}, { source: makeSource(cfg), now: Date.now });
+const result = await callTool(name, rawArgs ? JSON.parse(rawArgs) : {}, {
+  source: makeSource(cfg),
+  now: Date.now,
+  commute: { home: cfg.commuteHome, away: cfg.commuteAway },
+});
 console.log(result.content.map((c) => c.text).join("\n"));
 if (result.isError) process.exit(1);

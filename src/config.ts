@@ -16,6 +16,8 @@ export function readConfig(env: Record<string, unknown>, kv?: KVLike): Config {
     useTestApi: yes("NJT_USE_TEST_API"),
     forceMock: yes("MOCK_MODE"),
     accessKey: s("MCP_ACCESS_KEY"),
+    commuteHome: s("COMMUTE_HOME"),
+    commuteAway: s("COMMUTE_AWAY") ?? s("COMMUTE_SCHOOL") ?? s("COMMUTE_WORK"),
     allowedOrigins: (s("ALLOWED_ORIGINS") ?? "").split(",").map((o) => o.trim()).filter(Boolean),
     kv,
   };

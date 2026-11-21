@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4 (Nov 21, 2026)
+- New tool `my_commute`: the next trains both ways between a saved home station and a saved destination (`COMMUTE_HOME`, `COMMUTE_AWAY`; `COMMUTE_SCHOOL` or `COMMUTE_WORK` also work), or any two stations passed in. The trip away from home comes first in the morning and the trip home first after noon. Uses one-change trips when no direct train runs.
+- `plan_trip` and `my_commute` share one planner.
+
 ## 0.1.3 (Nov 20, 2026)
 - `train_status` now says which end of the train is emptiest (front, middle or back), the two emptiest cars counted from the front, and which cars have restrooms, when NJ Transit reports per-car counts. Sample trains have 8 cars with made-up counts.
 

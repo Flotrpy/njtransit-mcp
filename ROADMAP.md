@@ -8,7 +8,7 @@ Add new ideas at the bottom.
 - [x] `last_train` (Nov 18): the last direct train tonight from A to B (uses the full board in `boardWithStops`).
 - [x] `plan_trip` with transfers (Nov 19): when there's no one-seat ride, try two-leg trips via Secaucus (SE) or Newark Penn (NP), with the connection time.
 - [x] `train_status` crowding by car (Nov 20): use CAPACITY → SECTIONS → CARS to say which end of the train is emptiest.
-- [ ] `my_commute`: env vars `COMMUTE_HOME` / `COMMUTE_SCHOOL` (station names); one call shows the next trains both ways.
+- [x] `my_commute` (Nov 21): env vars `COMMUTE_HOME` / `COMMUTE_AWAY` (or `COMMUTE_SCHOOL`) (station names); one call shows the next trains both ways.
 - [ ] `leave_by`: given a train and minutes of walking/driving to the station, say when to leave (Eastern time).
 - [ ] `next_departures` option `direction` ("to New York" / "away from New York"), using the DIRECTION field.
 - [ ] `next_departures` option `njt_only` to hide Amtrak trains on shared stations.
