@@ -8,7 +8,7 @@ import { callTool, TOOLS, type ToolContext } from "./tools.ts";
 import type { Config, RailSource } from "./types.ts";
 
 export const SERVER_NAME = "njtransit-trains";
-export const SERVER_VERSION = "0.1.4";
+export const SERVER_VERSION = "0.1.5";
 const SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const LATEST = SUPPORTED_VERSIONS[0];
 

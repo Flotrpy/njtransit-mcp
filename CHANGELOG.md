@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.5 (Nov 22, 2026)
+- New tool `leave_by`: what time to leave to catch a train, from minutes to the station plus a few spare minutes (default 3). Give a train number, or a destination to get the next direct train you can still make and a backup. Uses expected times, so delays move the leave time, and says plainly when it's too late.
+
 ## 0.1.4 (Nov 21, 2026)
 - New tool `my_commute`: the next trains both ways between a saved home station and a saved destination (`COMMUTE_HOME`, `COMMUTE_AWAY`; `COMMUTE_SCHOOL` or `COMMUTE_WORK` also work), or any two stations passed in. The trip away from home comes first in the morning and the trip home first after noon. Uses one-change trips when no direct train runs.
 - `plan_trip` and `my_commute` share one planner.

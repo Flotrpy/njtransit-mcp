@@ -42,7 +42,7 @@ test("notifications get 202 with no body", async () => {
 test("tools/list returns all tools with schemas", async () => {
   const r = await rpc(app, { jsonrpc: "2.0", id: 3, method: "tools/list" });
   const names = r.body.result.tools.map((t: { name: string }) => t.name).sort();
-  assert.deepEqual(names, ["find_station", "last_train", "my_commute", "next_departures", "plan_trip", "service_alerts", "train_status"]);
+  assert.deepEqual(names, ["find_station", "last_train", "leave_by", "my_commute", "next_departures", "plan_trip", "service_alerts", "train_status"]);
   for (const t of r.body.result.tools) {
     assert.equal(t.inputSchema.type, "object");
     assert.ok(t.description.length > 40);
@@ -218,4 +218,38 @@ test("readConfig takes COMMUTE_SCHOOL when COMMUTE_AWAY isn't set", () => {
   const cfg = readConfig({ COMMUTE_HOME: "Metropark", COMMUTE_SCHOOL: "Princeton Junction" });
   assert.equal(cfg.commuteHome, "Metropark");
   assert.equal(cfg.commuteAway, "Princeton Junction");
+});
+
+/** "5:12 PM" on the test day (Nov 18, Eastern) to epoch ms. */
+function clockMs(t: string): number {
+  const [, h, m, ap] = t.match(/^(\d+):(\d+) (AM|PM)$/)!;
+  const hour = (Number(h) % 12) + (ap === "PM" ? 12 : 0);
+  return Date.parse(`2026-11-18T${String(hour + 5).padStart(2, "0")}:${m}:00Z`); // ET is UTC-5 in November
+}
+
+test("leave_by picks the next direct train you can still make, plus a backup", async () => {
+  const r = await call("leave_by", { station: "metropark", minutes_to_station: 10, to: "penn station" });
+  assert.ok(!r.body.result.isError, r.body.result.content[0].text);
+  const opts = r.body.result.structuredContent.options;
+  assert.equal(opts.length, 2);
+  for (const o of opts) {
+    assert.equal(clockMs(o.departs) - clockMs(o.leaveBy), 13 * 60_000); // 10 min away + 3 spare
+    assert.ok(clockMs(o.leaveBy) >= NOW - 3 * 60_000);
+  }
+  assert.ok(clockMs(opts[0].departs) <= clockMs(opts[1].departs));
+  assert.match(r.body.result.content[0].text, /Backup: /);
+});
+
+test("leave_by for one train says when to leave, or that it's too late", async () => {
+  const plan = await call("plan_trip", { from: "metropark", to: "penn station", limit: 3 });
+  const trip = plan.body.result.structuredContent.trips.find((t: { cancelled: boolean }) => !t.cancelled);
+  const r = await call("leave_by", { station: "MP", minutes_to_station: 5, buffer_minutes: 0, train_id: trip.trainId });
+  const s = r.body.result.structuredContent;
+  assert.equal(s.departs, trip.departs);
+  assert.equal(clockMs(s.departs) - clockMs(s.leaveBy), 5 * 60_000);
+  const far = await call("leave_by", { station: "MP", minutes_to_station: 180, train_id: trip.trainId });
+  assert.equal(far.body.result.structuredContent.tooLate, true);
+  assert.match(far.body.result.content[0].text, /Too late for Train/);
+  const neither = await call("leave_by", { station: "MP", minutes_to_station: 5 });
+  assert.equal(neither.body.result.isError, true);
 });

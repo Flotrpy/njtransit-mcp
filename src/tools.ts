@@ -806,6 +806,127 @@ const trainStatus: ToolDef = {
   },
 };
 
+interface Catch {
+  trainId: string;
+  line: string;
+  departs: number;
+  leaveBy: number;
+  status: string;
+}
+
+/** Minutes of the spare time already used up if you leave now (0 when there's still time). */
+function minutesBehind(c: Catch, now: number): number {
+  return c.leaveBy >= now ? 0 : Math.ceil((now - c.leaveBy) / 60_000);
+}
+
+function catchLine(c: Catch, stationName: string, now: number, buffer: number): string {
+  const behind = minutesBehind(c, now);
+  const train = `Train ${c.trainId}${c.line ? ` (${c.line})` : ""}`;
+  if (behind > buffer) {
+    return `Too late for ${train} at ${stationName}, leaving ${formatClock(c.departs)}: you'd get there about ${behind - buffer} min after it leaves.`;
+  }
+  const leave =
+    c.leaveBy > now
+      ? `Leave by ${formatClock(c.leaveBy)} (${relativeMinutes(c.leaveBy, now)})`
+      : `Leave now (you'd get there with ${buffer - behind} min to spare)`;
+  return `${leave} to catch Train ${c.trainId}${c.line ? ` (${c.line})` : ""} at ${stationName}, leaving ${formatClock(c.departs)} · ${c.status}`;
+}
+
+const leaveBy: ToolDef = {
+  name: "leave_by",
+  title: "When to leave for my NJ Transit train",
+  description:
+    "Says what time to leave (Eastern) to catch an NJ Transit train, given how many minutes it takes to walk " +
+    "or drive to the station. Pass train_id for one specific train, or pass to (a destination) to find the " +
+    "next direct train still worth heading out for, plus the one after. Uses the train's expected time, so " +
+    "delays push the leave time later. Adds a few spare minutes (buffer_minutes, default 3).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      station: { type: "string", description: "Station where you'll board, name or code." },
+      minutes_to_station: { type: "integer", minimum: 0, maximum: 180, description: "Minutes to walk or drive to the station." },
+      train_id: { type: "string", description: 'A specific train number, e.g. "3855".' },
+      to: { type: "string", description: "Where you're going, to pick the next direct train there." },
+      buffer_minutes: { type: "integer", minimum: 0, maximum: 30, description: "Spare minutes to arrive early (default 3)." },
+    },
+    required: ["station", "minutes_to_station"],
+    additionalProperties: false,
+  },
+  annotations: READ_ONLY,
+  async run(args, ctx) {
+    const stations = await ctx.source.stations();
+    const st = resolveStation(stations, str(args, "station", true));
+    if (args.minutes_to_station === undefined || args.minutes_to_station === null || args.minutes_to_station === "") {
+      throw new InputError('Missing "minutes_to_station".');
+    }
+    const travel = int(args, "minutes_to_station", 10, 0, 180);
+    const buffer = int(args, "buffer_minutes", 3, 0, 30);
+    const lead = (travel + buffer) * 60_000;
+    const trainArg = str(args, "train_id");
+    const toArg = str(args, "to");
+    const now = ctx.now();
+    const howFar = `${travel} min to get there plus ${buffer} min to spare`;
+
+    if (trainArg) {
+      const id = trainArg.replace(/^#?train\s*/i, "").replace(/^#/, "");
+      if (!/^[A-Za-z0-9]{1,8}$/.test(id)) throw new InputError(`"${id}" doesn't look like a train number.`);
+      let t: TrainStopList;
+      try {
+        t = await ctx.source.trainStops(id);
+      } catch (e) {
+        if (e instanceof NjtError) throw e;
+        throw new InputError(`Couldn't find train ${id}. ${(e as Error).message}`);
+      }
+      const stop = (t.STOPS ?? []).find((s) => s.STATION_2CHAR === st.STATION_2CHAR);
+      if (!stop) throw new InputError(`Train ${id} doesn't stop at ${st.STATIONNAME}.`);
+      const departs = stopTime(stop);
+      if (departs === undefined) throw new InputError(`NJ Transit doesn't list a time for train ${id} at ${st.STATIONNAME}.`);
+      const base = { station: { code: st.STATION_2CHAR, name: st.STATIONNAME }, trainId: t.TRAIN_ID, departs: formatClock(departs) };
+      if (isCancelled(stop.STOP_STATUS)) {
+        return text(`Train ${id} is cancelled at ${st.STATIONNAME}.\n\n${footer(ctx.source, now)}`, { ...base, cancelled: true, sampleData: ctx.source.mode === "mock" });
+      }
+      if (/^y/i.test(stop.DEPARTED ?? "") || departs < now) {
+        return text(`Train ${id} has already left ${st.STATIONNAME} (${formatClock(departs)}).\n\n${footer(ctx.source, now)}`, { ...base, departed: true, sampleData: ctx.source.mode === "mock" });
+      }
+      const c: Catch = { trainId: t.TRAIN_ID, line: t.LINECODE ?? "", departs, leaveBy: departs - lead, status: !stop.STOP_STATUS?.trim() || /^on ?time$/i.test(stop.STOP_STATUS) ? "On time" : stop.STOP_STATUS.trim() };
+      return text(`${catchLine(c, st.STATIONNAME, now, buffer)}\n(${howFar}.)\n\n${footer(ctx.source, now)}`, {
+        ...base,
+        leaveBy: formatClock(c.leaveBy),
+        late: c.leaveBy <= now,
+        tooLate: minutesBehind(c, now) > buffer,
+        sampleData: ctx.source.mode === "mock",
+      });
+    }
+
+    if (!toArg) throw new InputError('Pass train_id (a train number) or to (where you\'re going).');
+    const to = resolveStation(stations, toArg);
+    if (to.STATION_2CHAR === st.STATION_2CHAR) throw new InputError("The station and destination are the same.");
+    const board = await ctx.source.boardWithStops(st.STATION_2CHAR);
+    const trips = (await directTrips(ctx, board.ITEMS ?? [], st.STATION_2CHAR, to.STATION_2CHAR, 10)).filter(
+      (t) => !t.dep.cancelled && t.depart !== undefined,
+    );
+    // Trains you can still make, even if it eats into the spare minutes, soonest first.
+    const options: Catch[] = trips
+      .map((t) => ({ trainId: t.dep.trainId, line: t.dep.line, departs: t.depart!, leaveBy: t.depart! - lead, status: t.dep.status }))
+      .filter((c) => minutesBehind(c, now) <= buffer)
+      .slice(0, 2);
+    const header = `To ${to.STATIONNAME} from ${st.STATIONNAME}:`;
+    if (!options.length) {
+      return text(
+        `${header}\nNo direct train you can still make is listed right now. Try plan_trip for trips with a change.\n\n${footer(ctx.source, now)}`,
+        { station: { code: st.STATION_2CHAR, name: st.STATIONNAME }, to: { code: to.STATION_2CHAR, name: to.STATIONNAME }, options: [], sampleData: ctx.source.mode === "mock" },
+      );
+    }
+    const lines = options.map((c, i) => (i === 0 ? catchLine(c, st.STATIONNAME, now, buffer) : `Backup: ${catchLine(c, st.STATIONNAME, now, buffer)}`));
+    return text(`${header}\n${lines.join("\n")}\n(${howFar}.)\n\n${footer(ctx.source, now)}`, {
+      station: { code: st.STATION_2CHAR, name: st.STATIONNAME },
+      to: { code: to.STATION_2CHAR, name: to.STATIONNAME },
+      options: options.map((c) => ({ trainId: c.trainId, line: c.line, departs: formatClock(c.departs), leaveBy: formatClock(c.leaveBy), late: c.leaveBy <= now, status: c.status })),
+      sampleData: ctx.source.mode === "mock",
+    });
+  },
+};
+
 const serviceAlerts: ToolDef = {
   name: "service_alerts",
   title: "NJ Transit rail service alerts",
@@ -855,7 +976,7 @@ const serviceAlerts: ToolDef = {
   },
 };
 
-export const TOOLS: ToolDef[] = [nextDepartures, planTrip, myCommute, lastTrain, trainStatus, serviceAlerts, findStation];
+export const TOOLS: ToolDef[] = [nextDepartures, planTrip, myCommute, leaveBy, lastTrain, trainStatus, serviceAlerts, findStation];
 
 /** Run a tool by name, turning expected problems into readable tool errors. */
 export async function callTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {

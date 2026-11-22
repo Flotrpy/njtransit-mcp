@@ -8,6 +8,7 @@ Ask Claude things like:
 - "Where is train 3847 right now?"
 - "Any Northeast Corridor delays?"
 - "What are my trains today?" (with your commute saved)
+- "I'm 12 minutes from Metropark. When do I leave for Penn Station?"
 
 and get answers from NJ Transit's live rail data, with every time in Eastern.
 
@@ -23,6 +24,7 @@ data**, so you can try everything before signing up.
 | `next_departures` | Live board for a station: times, track, delay, cancellations, crowding. Filter by line or destination. |
 | `plan_trip` | Next direct trains from A to B with leave/arrive times and trip length. When none run, trips with one change at Secaucus or Newark Penn, with the connection time. |
 | `my_commute` | Your commute both ways in one answer, from saved home and destination stations (or any two you name). |
+| `leave_by` | What time to leave home to catch a train, from minutes to the station, with a backup train. |
 | `last_train` | The last direct train tonight from A to B, plus two backups. Says if NJ Transit's board doesn't reach late enough yet. |
 | `train_status` | One train's stops, which it has left, where it is now, late or not, how full, and which end of the train is emptiest. |
 | `service_alerts` | Current alerts, system-wide or for a station or line. |
@@ -45,7 +47,7 @@ Needs Node.js 22.18 or newer (runs the TypeScript directly, no build step).
 
 ```bash
 cd njtransit-mcp
-npm test                                   # 39 tests
+npm test                                   # 41 tests
 npm run try -- next_departures '{"station":"secaucus"}'
 npm run try -- plan_trip '{"from":"metropark","to":"penn station"}'
 npm start                                  # MCP server at http://127.0.0.1:8787/mcp
