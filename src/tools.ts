@@ -1,6 +1,6 @@
 // The MCP tools: what Claude can ask this server, and how answers are worded.
 
-import { matchesLine, matchesText, resolveStation, searchStations, StationNotFound } from "./match.ts";
+import { matchesLine, matchesText, normalize, resolveStation, searchStations, StationNotFound } from "./match.ts";
 import { NjtError } from "./njt.ts";
 import { etParts, etWallToEpoch, formatClock, formatDayClock, formatDuration, parseNjtTime, relativeMinutes } from "./time.ts";
 import type { Capacity, RailSource, ScheduleItem, Station, Stop, TrainStopList } from "./types.ts";
@@ -168,6 +168,35 @@ async function station(ctx: ToolContext, query: string) {
   return resolveStation(await ctx.source.stations(), query);
 }
 
+type Direction = "to_new_york" | "away_from_new_york";
+
+/** Read what a person typed for direction: "to New York", "inbound", "eastbound", "away", ... */
+function parseDirection(raw: string | undefined): Direction | undefined {
+  if (!raw) return undefined;
+  const q = raw.toLowerCase().replace(/[_-]+/g, " ").trim();
+  if (/\b(away|out|outbound|west|westbound|from)\b/.test(q)) return "away_from_new_york";
+  if (/\b(to|toward|towards|into|in|inbound|east|eastbound|new york|nyc|city|manhattan|hoboken)\b/.test(q)) return "to_new_york";
+  throw new InputError('"direction" should be "to_new_york" or "away_from_new_york".');
+}
+
+const NY_SIDE = ["NY", "HB"]; // New York Penn and Hoboken: the end NJ Transit calls eastbound
+
+/**
+ * Is this train heading toward New York (or Hoboken)? Uses NJ Transit's DIRECTION when present,
+ * then the destination, then the train's remaining stops. Null when there's nothing to go on.
+ */
+export function headsToNewYork(item: ScheduleItem, stationCode: string): boolean | null {
+  const dir = (item.DIRECTION ?? "").toLowerCase();
+  if (dir.startsWith("east")) return true;
+  if (dir.startsWith("west")) return false;
+  const dest = normalize(item.DESTINATION ?? "");
+  if (/\b(new york|ny penn|hoboken|nyp)\b/.test(dest)) return true;
+  const stops = item.STOPS ?? [];
+  const here = stops.findIndex((s) => s.STATION_2CHAR === stationCode);
+  if (here >= 0) return stops.slice(here + 1).some((s) => NY_SIDE.includes(s.STATION_2CHAR));
+  return dest ? false : null;
+}
+
 // ---------- tools ----------
 
 const findStation: ToolDef = {
@@ -203,13 +232,19 @@ const nextDepartures: ToolDef = {
   description:
     "Live departure board for an NJ Transit rail station: the next trains with scheduled and expected times " +
     "(Eastern), track, delay, cancellations and how crowded the train is when NJ Transit reports it. " +
-    "Optionally filter by line (e.g. \"Northeast Corridor\", \"Coast\", \"Morristown\") or destination.",
+    "Optionally filter by line (e.g. \"Northeast Corridor\", \"Coast\", \"Morristown\"), destination, or " +
+    "direction (toward New York/Hoboken, or away from it).",
   inputSchema: {
     type: "object",
     properties: {
       station: { type: "string", description: 'Station name or 2-letter code, e.g. "New York Penn" or "NY".' },
       line: { type: "string", description: 'Only trains on this line, e.g. "NEC", "North Jersey Coast", "Raritan Valley".' },
       destination: { type: "string", description: 'Only trains whose final stop matches this, e.g. "Trenton".' },
+      direction: {
+        type: "string",
+        enum: ["to_new_york", "away_from_new_york"],
+        description: "Only trains heading toward New York (or Hoboken), or away from it.",
+      },
       limit: { type: "integer", minimum: 1, maximum: 19, description: "How many trains to show (default 8)." },
     },
     required: ["station"],
@@ -220,16 +255,19 @@ const nextDepartures: ToolDef = {
     const st = await station(ctx, str(args, "station", true));
     const line = str(args, "line");
     const dest = str(args, "destination");
+    const direction = parseDirection(str(args, "direction"));
     const limit = int(args, "limit", 8, 1, 19);
     const board = await ctx.source.departures(st.STATION_2CHAR);
     const now = ctx.now();
     const items = (board.ITEMS ?? [])
       .filter((it) => !line || matchesLine(it, line))
       .filter((it) => !dest || matchesText(it.DESTINATION, dest))
+      .filter((it) => !direction || headsToNewYork(it, st.STATION_2CHAR) === (direction === "to_new_york"))
       .slice(0, limit)
       .map(toDeparture);
 
-    const filters = [line && `on ${line}`, dest && `to ${dest}`].filter(Boolean).join(" ");
+    const dirText = direction === "to_new_york" ? "toward New York" : direction ? "away from New York" : "";
+    const filters = [line && `on ${line}`, dest && `to ${dest}`, dirText].filter(Boolean).join(" ");
     const header = `Next trains from ${st.STATIONNAME} (${st.STATION_2CHAR})${filters ? ` ${filters}` : ""}:`;
     const body = items.length
       ? items.map((d, i) => departureLine(d, now, i + 1)).join("\n")

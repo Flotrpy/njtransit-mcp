@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.6 (Nov 23, 2026)
+- `next_departures` takes `direction`: only trains toward New York (or Hoboken), or only trains away from it. Uses NJ Transit's direction when it sends one, otherwise the destination and the train's remaining stops. Plain words like "inbound" or "away from New York" work too.
+
 ## 0.1.5 (Nov 22, 2026)
 - New tool `leave_by`: what time to leave to catch a train, from minutes to the station plus a few spare minutes (default 3). Give a train number, or a destination to get the next direct train you can still make and a backup. Uses expected times, so delays move the leave time, and says plainly when it's too late.
 

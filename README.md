@@ -21,7 +21,7 @@ data**, so you can try everything before signing up.
 
 | Tool | What it answers |
 | --- | --- |
-| `next_departures` | Live board for a station: times, track, delay, cancellations, crowding. Filter by line or destination. |
+| `next_departures` | Live board for a station: times, track, delay, cancellations, crowding. Filter by line, destination, or direction (toward or away from New York). |
 | `plan_trip` | Next direct trains from A to B with leave/arrive times and trip length. When none run, trips with one change at Secaucus or Newark Penn, with the connection time. |
 | `my_commute` | Your commute both ways in one answer, from saved home and destination stations (or any two you name). |
 | `leave_by` | What time to leave home to catch a train, from minutes to the station, with a backup train. |
@@ -47,7 +47,7 @@ Needs Node.js 22.18 or newer (runs the TypeScript directly, no build step).
 
 ```bash
 cd njtransit-mcp
-npm test                                   # 41 tests
+npm test                                   # 43 tests
 npm run try -- next_departures '{"station":"secaucus"}'
 npm run try -- plan_trip '{"from":"metropark","to":"penn station"}'
 npm start                                  # MCP server at http://127.0.0.1:8787/mcp
@@ -155,6 +155,7 @@ Adding a feature: see [DAILY.md](DAILY.md) and the backlog in [ROADMAP.md](ROADM
 
 - The RailData field names and time formats come from the open-source
   [`raildata`](https://github.com/jtarrio/raildata) client, not from NJ Transit's own docs.
+  Whether boards include a `DIRECTION` field is unconfirmed; without it, direction comes from the destination and stops.
   The per-car crowding fields (`SECTIONS`, `CARS`, `CAR_POSITION`, `CAR_REST`) are the least certain; the code accepts
   numbers or words for positions and skips them quietly if they're missing.
   Verify against a real response once you have an account (`npm run try -- next_departures '{"station":"NY"}'`).

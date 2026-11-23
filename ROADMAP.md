@@ -10,7 +10,7 @@ Add new ideas at the bottom.
 - [x] `train_status` crowding by car (Nov 20): use CAPACITY → SECTIONS → CARS to say which end of the train is emptiest.
 - [x] `my_commute` (Nov 21): env vars `COMMUTE_HOME` / `COMMUTE_AWAY` (or `COMMUTE_SCHOOL`) (station names); one call shows the next trains both ways.
 - [x] `leave_by` (Nov 22): given a train and minutes of walking/driving to the station, say when to leave (Eastern time).
-- [ ] `next_departures` option `direction` ("to New York" / "away from New York"), using the DIRECTION field.
+- [x] `next_departures` option `direction` (Nov 23) ("to New York" / "away from New York"), using the DIRECTION field.
 - [ ] `next_departures` option `njt_only` to hide Amtrak trains on shared stations.
 - [ ] `trains_near`: given a latitude/longitude, list trains moving nearby (getVehicleData; sample data needs positions too).
 - [ ] `elevator_status`: filter alerts mentioning elevators or escalators for a station (accessibility).

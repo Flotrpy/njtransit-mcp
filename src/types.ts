@@ -76,6 +76,8 @@ export interface ScheduleItem {
   LINECODE?: string;
   LINEABBREVIATION?: string;
   INLINEMSG?: string;
+  /** "Eastbound" (toward New York or Hoboken) or "Westbound", when NJ Transit sends it. */
+  DIRECTION?: string;
   CAPACITY?: Capacity[];
   STOPS?: Stop[] | null;
 }

@@ -232,6 +232,7 @@ export class MockSource implements RailSource {
           LINE: trip.line.name,
           LINECODE: trip.line.code,
           LINEABBREVIATION: trip.line.abbr,
+          DIRECTION: trip.outbound ? "Westbound" : "Eastbound",
           TRAIN_ID: trip.id,
           STATUS: status,
           SEC_LATE: String(trip.delayMin * 60),

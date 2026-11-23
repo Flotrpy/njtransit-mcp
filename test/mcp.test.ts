@@ -253,3 +253,17 @@ test("leave_by for one train says when to leave, or that it's too late", async (
   const neither = await call("leave_by", { station: "MP", minutes_to_station: 5 });
   assert.equal(neither.body.result.isError, true);
 });
+
+test("next_departures can show only trains toward or away from New York", async () => {
+  const toNy = await call("next_departures", { station: "secaucus", direction: "to_new_york" });
+  const inbound = toNy.body.result.structuredContent.departures;
+  assert.ok(inbound.length > 0);
+  for (const d of inbound) assert.match(d.destination, /New York/);
+  assert.match(toNy.body.result.content[0].text, /toward New York/);
+  const away = await call("next_departures", { station: "secaucus", direction: "away from New York" });
+  const outbound = away.body.result.structuredContent.departures;
+  assert.ok(outbound.length > 0);
+  for (const d of outbound) assert.doesNotMatch(d.destination, /New York/);
+  const bad = await call("next_departures", { station: "secaucus", direction: "sideways" });
+  assert.equal(bad.body.result.isError, true);
+});
