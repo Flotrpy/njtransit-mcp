@@ -179,6 +179,12 @@ function parseDirection(raw: string | undefined): Direction | undefined {
   throw new InputError('"direction" should be "to_new_york" or "away_from_new_york".');
 }
 
+/** Amtrak trains show up on NJ Transit boards at shared stations; NJ Transit tickets aren't good on most of them. */
+export function isAmtrak(item: Pick<ScheduleItem, "LINE" | "LINEABBREVIATION" | "LINECODE" | "TRAIN_ID">): boolean {
+  const hay = `${item.LINE ?? ""} ${item.LINEABBREVIATION ?? ""}`;
+  return /amtrak|\bamtk\b/i.test(hay) || (item.LINECODE ?? "").toUpperCase() === "AM" || /^A\d+$/i.test(item.TRAIN_ID ?? "");
+}
+
 const NY_SIDE = ["NY", "HB"]; // New York Penn and Hoboken: the end NJ Transit calls eastbound
 
 /**
@@ -233,7 +239,7 @@ const nextDepartures: ToolDef = {
     "Live departure board for an NJ Transit rail station: the next trains with scheduled and expected times " +
     "(Eastern), track, delay, cancellations and how crowded the train is when NJ Transit reports it. " +
     "Optionally filter by line (e.g. \"Northeast Corridor\", \"Coast\", \"Morristown\"), destination, or " +
-    "direction (toward New York/Hoboken, or away from it).",
+    "direction (toward New York/Hoboken, or away from it). Set njt_only to hide Amtrak trains at shared stations.",
   inputSchema: {
     type: "object",
     properties: {
@@ -245,6 +251,7 @@ const nextDepartures: ToolDef = {
         enum: ["to_new_york", "away_from_new_york"],
         description: "Only trains heading toward New York (or Hoboken), or away from it.",
       },
+      njt_only: { type: "boolean", description: "Hide Amtrak trains (they share some stations; NJ Transit tickets aren't valid on most)." },
       limit: { type: "integer", minimum: 1, maximum: 19, description: "How many trains to show (default 8)." },
     },
     required: ["station"],
@@ -256,6 +263,7 @@ const nextDepartures: ToolDef = {
     const line = str(args, "line");
     const dest = str(args, "destination");
     const direction = parseDirection(str(args, "direction"));
+    const njtOnly = args.njt_only === true || /^(true|yes|1)$/i.test(String(args.njt_only ?? ""));
     const limit = int(args, "limit", 8, 1, 19);
     const board = await ctx.source.departures(st.STATION_2CHAR);
     const now = ctx.now();
@@ -263,11 +271,12 @@ const nextDepartures: ToolDef = {
       .filter((it) => !line || matchesLine(it, line))
       .filter((it) => !dest || matchesText(it.DESTINATION, dest))
       .filter((it) => !direction || headsToNewYork(it, st.STATION_2CHAR) === (direction === "to_new_york"))
+      .filter((it) => !njtOnly || !isAmtrak(it))
       .slice(0, limit)
       .map(toDeparture);
 
     const dirText = direction === "to_new_york" ? "toward New York" : direction ? "away from New York" : "";
-    const filters = [line && `on ${line}`, dest && `to ${dest}`, dirText].filter(Boolean).join(" ");
+    const filters = [line && `on ${line}`, dest && `to ${dest}`, dirText, njtOnly && "(NJ Transit only)"].filter(Boolean).join(" ");
     const header = `Next trains from ${st.STATIONNAME} (${st.STATION_2CHAR})${filters ? ` ${filters}` : ""}:`;
     const body = items.length
       ? items.map((d, i) => departureLine(d, now, i + 1)).join("\n")

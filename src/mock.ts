@@ -22,6 +22,8 @@ interface MockLine {
   color: string;
   baseId: number;
   headwayMin: number;
+  /** Put before the train number, e.g. "A" for Amtrak trains on NJ Transit boards. */
+  idPrefix?: string;
   stops: [code: string, name: string, minutesFromStart: number][];
 }
 
@@ -82,6 +84,21 @@ const LINES: MockLine[] = [
       ["ST", "Summit", 35],
       ["MR", "Morristown", 50],
       ["DO", "Dover", 70],
+    ],
+  },
+  {
+    // Amtrak shares tracks and boards with NJ Transit on the Northeast Corridor.
+    name: "AMTRAK",
+    abbr: "AMTK",
+    code: "AM",
+    color: "#FFFF00",
+    baseId: 2100,
+    headwayMin: 60,
+    idPrefix: "A",
+    stops: [
+      ["NY", "New York Penn Station", 0],
+      ["NP", "Newark Penn Station", 15],
+      ["TR", "Trenton", 55],
     ],
   },
 ];
@@ -158,7 +175,7 @@ export class MockSource implements RailSource {
           const h = hash(slot * 7 + line.baseId + (outbound ? 1 : 0));
           const r = h % 100;
           out.push({
-            id: String(num),
+            id: `${line.idPrefix ?? ""}${num}`,
             line,
             outbound,
             stops,

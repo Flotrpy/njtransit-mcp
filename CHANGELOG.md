@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7 (Nov 24, 2026)
+- `next_departures` takes `njt_only` to hide Amtrak trains at stations NJ Transit shares with Amtrak (spotted by line name, line code or an "A" train number).
+- Sample data now includes hourly Amtrak trains between New York, Newark Penn and Trenton, like the real shared boards.
+
 ## 0.1.6 (Nov 23, 2026)
 - `next_departures` takes `direction`: only trains toward New York (or Hoboken), or only trains away from it. Uses NJ Transit's direction when it sends one, otherwise the destination and the train's remaining stops. Plain words like "inbound" or "away from New York" work too.
 

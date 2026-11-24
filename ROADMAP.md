@@ -11,7 +11,7 @@ Add new ideas at the bottom.
 - [x] `my_commute` (Nov 21): env vars `COMMUTE_HOME` / `COMMUTE_AWAY` (or `COMMUTE_SCHOOL`) (station names); one call shows the next trains both ways.
 - [x] `leave_by` (Nov 22): given a train and minutes of walking/driving to the station, say when to leave (Eastern time).
 - [x] `next_departures` option `direction` (Nov 23) ("to New York" / "away from New York"), using the DIRECTION field.
-- [ ] `next_departures` option `njt_only` to hide Amtrak trains on shared stations.
+- [x] `next_departures` option `njt_only` (Nov 24) to hide Amtrak trains on shared stations.
 - [ ] `trains_near`: given a latitude/longitude, list trains moving nearby (getVehicleData; sample data needs positions too).
 - [ ] `elevator_status`: filter alerts mentioning elevators or escalators for a station (accessibility).
 - [ ] MCP prompt `commute_briefing`: a ready-made prompt that calls service_alerts + my_commute for a morning summary.
@@ -21,3 +21,4 @@ Add new ideas at the bottom.
 - [ ] `server_status` tool: data mode, cache hits, tokens used today, NJ Transit reachable or not.
 - [ ] Hoboken-side sample data: add Main/Bergen, Montclair-Boonton and Raritan Valley lines to `mock.ts`.
 - [ ] Holiday and weekend note: flag when NJ Transit runs a weekend/holiday schedule on that day.
+- [ ] Skip Amtrak by default in `plan_trip`, `last_train`, `leave_by` and `my_commute` (NJ Transit tickets aren't valid on most Amtrak trains), with an `include_amtrak` option.

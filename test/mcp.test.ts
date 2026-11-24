@@ -267,3 +267,14 @@ test("next_departures can show only trains toward or away from New York", async 
   const bad = await call("next_departures", { station: "secaucus", direction: "sideways" });
   assert.equal(bad.body.result.isError, true);
 });
+
+test("next_departures njt_only hides Amtrak trains", async () => {
+  const all = await call("next_departures", { station: "NY", limit: 19 });
+  const lines = all.body.result.structuredContent.departures.map((d: { line: string }) => d.line);
+  assert.ok(lines.includes("AMTRAK"), "the sample board at New York has Amtrak trains");
+  const njt = await call("next_departures", { station: "NY", limit: 19, njt_only: true });
+  const deps = njt.body.result.structuredContent.departures;
+  assert.ok(deps.length > 0);
+  for (const d of deps) assert.notEqual(d.line, "AMTRAK");
+  assert.match(njt.body.result.content[0].text, /NJ Transit only/);
+});
