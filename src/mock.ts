@@ -13,7 +13,17 @@ import type {
   StationMessage,
   Stop,
   TrainStopList,
+  VehicleData,
 } from "./types.ts";
+
+/** Rough station locations for the sample trains (latitude, longitude). */
+const COORDS: Record<string, [number, number]> = {
+  NY: [40.7506, -73.9935], SE: [40.7612, -74.0758], NP: [40.7347, -74.1644], NA: [40.7043, -74.1907],
+  EZ: [40.6671, -74.2153], RH: [40.6063, -74.2767], MP: [40.5684, -74.3292], ED: [40.5193, -74.4108],
+  NB: [40.4966, -74.4459], PJ: [40.3166, -74.6236], HL: [40.2547, -74.7041], TR: [40.2177, -74.755],
+  PE: [40.5097, -74.2737], AM: [40.42, -74.2232], RB: [40.3486, -74.0745], LB: [40.2973, -73.9883],
+  ND: [40.7475, -74.1717], ST: [40.7166, -74.3577], MR: [40.7978, -74.4741], DO: [40.8836, -74.5558],
+};
 
 interface MockLine {
   name: string;
@@ -291,6 +301,33 @@ export class MockSource implements RailSource {
       STOPS: this.toStops(trip),
       CAPACITY: [{ CUR_PERCENTAGE: String(trip.crowding), VEHICLE_TYPE: "Multilevel", SECTIONS: mockSections(trip) }],
     };
+  }
+
+  async vehicles(): Promise<VehicleData[]> {
+    const now = this.now();
+    const out: VehicleData[] = [];
+    for (const trip of this.trips()) {
+      if (trip.cancelled) continue;
+      const at = trip.stops.map((s) => s.at + trip.delayMin * 60_000);
+      if (now < at[0] || now >= at[at.length - 1]) continue;
+      const i = at.findIndex((t, k) => k > 0 && t > now); // next stop
+      const a = COORDS[trip.stops[i - 1].code];
+      const b = COORDS[trip.stops[i].code];
+      if (!a || !b) continue;
+      const f = (now - at[i - 1]) / (at[i] - at[i - 1]);
+      out.push({
+        ID: trip.id,
+        TRAIN_LINE: trip.line.name,
+        DIRECTION: trip.outbound ? "Westbound" : "Eastbound",
+        LAST_MODIFIED: formatNjtTime(now),
+        SCHED_DEP_TIME: formatNjtTime(trip.stops[0].at),
+        SEC_LATE: String(trip.delayMin * 60),
+        NEXT_STOP: trip.stops[i].name,
+        LATITUDE: (a[0] + (b[0] - a[0]) * f).toFixed(5),
+        LONGITUDE: (a[1] + (b[1] - a[1]) * f).toFixed(5),
+      });
+    }
+    return out;
   }
 
   async alerts(station?: string): Promise<StationMessage[]> {

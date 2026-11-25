@@ -42,7 +42,7 @@ test("notifications get 202 with no body", async () => {
 test("tools/list returns all tools with schemas", async () => {
   const r = await rpc(app, { jsonrpc: "2.0", id: 3, method: "tools/list" });
   const names = r.body.result.tools.map((t: { name: string }) => t.name).sort();
-  assert.deepEqual(names, ["find_station", "last_train", "leave_by", "my_commute", "next_departures", "plan_trip", "service_alerts", "train_status"]);
+  assert.deepEqual(names, ["find_station", "last_train", "leave_by", "my_commute", "next_departures", "plan_trip", "service_alerts", "train_status", "trains_near"]);
   for (const t of r.body.result.tools) {
     assert.equal(t.inputSchema.type, "object");
     assert.ok(t.description.length > 40);
@@ -277,4 +277,20 @@ test("next_departures njt_only hides Amtrak trains", async () => {
   assert.ok(deps.length > 0);
   for (const d of deps) assert.notEqual(d.line, "AMTRAK");
   assert.match(njt.body.result.content[0].text, /NJ Transit only/);
+});
+
+test("trains_near lists moving trains closest first, inside the radius", async () => {
+  const r = await call("trains_near", { latitude: 40.5684, longitude: -74.3292, radius_miles: 10 });
+  assert.ok(!r.body.result.isError, r.body.result.content[0].text);
+  const trains = r.body.result.structuredContent.trains;
+  assert.ok(trains.length > 0, r.body.result.content[0].text);
+  for (let i = 0; i < trains.length; i++) {
+    assert.ok(trains[i].miles <= 10);
+    if (i) assert.ok(trains[i].miles >= trains[i - 1].miles);
+    assert.ok(trains[i].nextStop);
+  }
+  const far = await call("trains_near", { latitude: 39, longitude: -77 });
+  assert.deepEqual(far.body.result.structuredContent.trains, []);
+  const bad = await call("trains_near", { latitude: "north", longitude: -74 });
+  assert.equal(bad.body.result.isError, true);
 });

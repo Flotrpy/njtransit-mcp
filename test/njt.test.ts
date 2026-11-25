@@ -155,3 +155,24 @@ test("last_train picks the last non-cancelled direct train before 3 AM", async (
   assert.equal(s.mayBeLaterTrains, false);
   assert.match(r.content[0].text, /Cancelled: Train 3897 at 1:00 AM/);
 });
+
+test("trains_near reads getVehicleData and skips trains with no position", async () => {
+  const { seen, fetchFn } = fakeNjt({
+    getVehicleData: () => [
+      { ID: "3855", TRAIN_LINE: "Northeast Corridor Line", DIRECTION: "Eastbound", SEC_LATE: "240", NEXT_STOP: "Rahway", LATITUDE: "40.5800", LONGITUDE: "-74.3100" },
+      { ID: "3290", TRAIN_LINE: "North Jersey Coast Line", DIRECTION: "Westbound", SEC_LATE: "0", NEXT_STOP: "Perth Amboy", LATITUDE: "40.5690", LONGITUDE: "-74.3300" },
+      { ID: "1111", TRAIN_LINE: "Main Line", LATITUDE: "", LONGITUDE: "" },
+      { ID: "2222", TRAIN_LINE: "Main Line", LATITUDE: "0", LONGITUDE: "0" },
+    ],
+  });
+  const ctx = { source: new NjtLiveSource({ njtToken: "t" }, { fetch: fetchFn, now: () => NOW }), now: () => NOW };
+  const r = await callTool("trains_near", { latitude: 40.5684, longitude: -74.3292 }, ctx);
+  const trains = (r.structuredContent as { trains: { trainId: string; heading: string; minutesLate: number }[] }).trains;
+  assert.deepEqual(trains.map((t) => t.trainId), ["3290", "3855"]);
+  assert.equal(trains[1].heading, "toward New York");
+  assert.equal(trains[1].minutesLate, 4);
+  assert.match(r.content[0].text, /4 min late/);
+  // Cached: a second call doesn't hit NJ Transit again.
+  await callTool("trains_near", { latitude: 40.5684, longitude: -74.3292 }, ctx);
+  assert.equal(seen.filter((x) => x.url.endsWith("getVehicleData")).length, 1);
+});

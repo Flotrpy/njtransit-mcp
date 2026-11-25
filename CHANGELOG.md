@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8 (Nov 25, 2026)
+- New tool `trains_near`: trains moving near a latitude and longitude right now, closest first, with distance, direction, next stop and delay (NJ Transit's getVehicleData, cached 30 seconds).
+- Sample trains now have positions between their stops, so the tool works without an account.
+
 ## 0.1.7 (Nov 24, 2026)
 - `next_departures` takes `njt_only` to hide Amtrak trains at stations NJ Transit shares with Amtrak (spotted by line name, line code or an "A" train number).
 - Sample data now includes hourly Amtrak trains between New York, Newark Penn and Trenton, like the real shared boards.

@@ -12,7 +12,7 @@ Add new ideas at the bottom.
 - [x] `leave_by` (Nov 22): given a train and minutes of walking/driving to the station, say when to leave (Eastern time).
 - [x] `next_departures` option `direction` (Nov 23) ("to New York" / "away from New York"), using the DIRECTION field.
 - [x] `next_departures` option `njt_only` (Nov 24) to hide Amtrak trains on shared stations.
-- [ ] `trains_near`: given a latitude/longitude, list trains moving nearby (getVehicleData; sample data needs positions too).
+- [x] `trains_near` (Nov 25): given a latitude/longitude, list trains moving nearby (getVehicleData; sample data needs positions too).
 - [ ] `elevator_status`: filter alerts mentioning elevators or escalators for a station (accessibility).
 - [ ] MCP prompt `commute_briefing`: a ready-made prompt that calls service_alerts + my_commute for a morning summary.
 - [ ] `list_lines`: every line with its nickname, and which stations it serves (from sample data and live boards).

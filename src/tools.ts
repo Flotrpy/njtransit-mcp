@@ -974,6 +974,94 @@ const leaveBy: ToolDef = {
   },
 };
 
+/** Miles between two points (haversine). */
+export function milesBetween(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 3958.8;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(lat2 - lat1);
+  const dLon = rad(lon2 - lon1);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function num(args: Record<string, unknown>, key: string, min: number, max: number): number {
+  const v = args[key];
+  const n = typeof v === "number" ? v : Number(v);
+  if (v === undefined || v === null || v === "" || !Number.isFinite(n)) throw new InputError(`"${key}" must be a number.`);
+  if (n < min || n > max) throw new InputError(`"${key}" must be between ${min} and ${max}.`);
+  return n;
+}
+
+const trainsNear: ToolDef = {
+  name: "trains_near",
+  title: "NJ Transit trains near a spot",
+  description:
+    "Lists NJ Transit trains moving near a latitude and longitude right now, closest first: how far away, " +
+    "which way they're heading, the next stop and any delay. Use for \"is a train about to pass me?\" or " +
+    "\"what trains are near here?\" when you know the person's location.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      latitude: { type: "number", description: "Latitude, e.g. 40.5684." },
+      longitude: { type: "number", description: "Longitude, e.g. -74.3292." },
+      radius_miles: { type: "number", minimum: 0.5, maximum: 25, description: "How far to look (default 3 miles)." },
+      limit: { type: "integer", minimum: 1, maximum: 15, description: "How many trains to show (default 8)." },
+    },
+    required: ["latitude", "longitude"],
+    additionalProperties: false,
+  },
+  annotations: READ_ONLY,
+  async run(args, ctx) {
+    const lat = num(args, "latitude", -90, 90);
+    const lon = num(args, "longitude", -180, 180);
+    const radius = args.radius_miles === undefined ? 3 : num(args, "radius_miles", 0.5, 25);
+    const limit = int(args, "limit", 8, 1, 15);
+    const now = ctx.now();
+    const near = (await ctx.source.vehicles())
+      .map((v) => ({ v, la: Number(v.LATITUDE), lo: Number(v.LONGITUDE) }))
+      .filter((x) => x.v.LATITUDE && x.v.LONGITUDE && Number.isFinite(x.la) && Number.isFinite(x.lo) && !(x.la === 0 && x.lo === 0))
+      .map((x) => ({ ...x, miles: milesBetween(lat, lon, x.la, x.lo) }))
+      .filter((x) => x.miles <= radius)
+      .sort((a, b) => a.miles - b.miles)
+      .slice(0, limit);
+
+    const where = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    if (!near.length) {
+      return text(`No NJ Transit trains are moving within ${radius} mi of ${where} right now.\n\n${footer(ctx.source, now)}`, {
+        trains: [],
+        sampleData: ctx.source.mode === "mock",
+      });
+    }
+    const trains = near.map(({ v, miles }) => {
+      const late = Math.round(secLate(v) / 60);
+      const dir = (v.DIRECTION ?? "").toLowerCase();
+      return {
+        trainId: v.ID ?? "?",
+        line: v.TRAIN_LINE ?? "",
+        miles: Math.round(miles * 10) / 10,
+        heading: dir.startsWith("east") ? "toward New York" : dir.startsWith("west") ? "away from New York" : null,
+        nextStop: v.NEXT_STOP?.trim() || null,
+        minutesLate: late,
+      };
+    });
+    const lines = trains.map((t, i) =>
+      [
+        `${i + 1}. Train ${t.trainId}${t.line ? ` (${t.line})` : ""}`,
+        `${t.miles} mi away`,
+        t.heading,
+        t.nextStop && `next stop ${t.nextStop}`,
+        t.minutesLate >= 1 ? `${t.minutesLate} min late` : "on time",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
+    return text(`Trains moving within ${radius} mi of ${where}:\n${lines.join("\n")}\n\n${footer(ctx.source, now)}`, {
+      trains,
+      sampleData: ctx.source.mode === "mock",
+    });
+  },
+};
+
 const serviceAlerts: ToolDef = {
   name: "service_alerts",
   title: "NJ Transit rail service alerts",
@@ -1023,7 +1111,7 @@ const serviceAlerts: ToolDef = {
   },
 };
 
-export const TOOLS: ToolDef[] = [nextDepartures, planTrip, myCommute, leaveBy, lastTrain, trainStatus, serviceAlerts, findStation];
+export const TOOLS: ToolDef[] = [nextDepartures, planTrip, myCommute, leaveBy, lastTrain, trainStatus, trainsNear, serviceAlerts, findStation];
 
 /** Run a tool by name, turning expected problems into readable tool errors. */
 export async function callTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {

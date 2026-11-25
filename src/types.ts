@@ -110,6 +110,23 @@ export interface TrainStopList {
   CAPACITY?: Capacity[];
 }
 
+/**
+ * One moving train from getVehicleData. Field names follow the community docs for RailData;
+ * they haven't been checked against a live answer yet, so every field is optional.
+ */
+export interface VehicleData {
+  ID?: string;
+  TRAIN_LINE?: string;
+  DIRECTION?: string;
+  ICS_TRACK_CKT?: string;
+  LAST_MODIFIED?: string;
+  SCHED_DEP_TIME?: string;
+  SEC_LATE?: string;
+  NEXT_STOP?: string;
+  LATITUDE?: string;
+  LONGITUDE?: string;
+}
+
 /** Where the server gets its train data: NJ Transit live, or built-in sample data. */
 export interface RailSource {
   readonly mode: "live" | "mock";
@@ -122,6 +139,8 @@ export interface RailSource {
   trainStops(trainId: string): Promise<TrainStopList>;
   /** Service alerts, optionally for one station (getStationMSG). */
   alerts(station?: string): Promise<StationMessage[]>;
+  /** Where every active train is right now (getVehicleData). */
+  vehicles(): Promise<VehicleData[]>;
 }
 
 /** A tiny key-value store, so a Cloudflare KV namespace or a Map can back the cache. */

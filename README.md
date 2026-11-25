@@ -27,6 +27,7 @@ data**, so you can try everything before signing up.
 | `leave_by` | What time to leave home to catch a train, from minutes to the station, with a backup train. |
 | `last_train` | The last direct train tonight from A to B, plus two backups. Says if NJ Transit's board doesn't reach late enough yet. |
 | `train_status` | One train's stops, which it has left, where it is now, late or not, how full, and which end of the train is emptiest. |
+| `trains_near` | Trains moving near a spot (latitude and longitude) right now, closest first, with direction and next stop. |
 | `service_alerts` | Current alerts, system-wide or for a station or line. |
 | `find_station` | Station names to 2-letter codes. Knows nicknames like "Penn Station", "EWR", "Secaucus". |
 
@@ -47,7 +48,7 @@ Needs Node.js 22.18 or newer (runs the TypeScript directly, no build step).
 
 ```bash
 cd njtransit-mcp
-npm test                                   # 45 tests
+npm test                                   # 48 tests
 npm run try -- next_departures '{"station":"secaucus"}'
 npm run try -- plan_trip '{"from":"metropark","to":"penn station"}'
 npm start                                  # MCP server at http://127.0.0.1:8787/mcp
@@ -155,6 +156,7 @@ Adding a feature: see [DAILY.md](DAILY.md) and the backlog in [ROADMAP.md](ROADM
 
 - The RailData field names and time formats come from the open-source
   [`raildata`](https://github.com/jtarrio/raildata) client, not from NJ Transit's own docs.
+  The `getVehicleData` field names used by `trains_near` (`ID`, `LATITUDE`, `LONGITUDE`, `NEXT_STOP` and so on) are unconfirmed too.
   Whether boards include a `DIRECTION` field is unconfirmed; without it, direction comes from the destination and stops.
   The per-car crowding fields (`SECTIONS`, `CARS`, `CAR_POSITION`, `CAR_REST`) are the least certain; the code accepts
   numbers or words for positions and skips them quietly if they're missing.

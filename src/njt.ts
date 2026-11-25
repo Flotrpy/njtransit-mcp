@@ -7,6 +7,7 @@ import type {
   StationBoard,
   StationMessage,
   TrainStopList,
+  VehicleData,
 } from "./types.ts";
 
 const PROD_BASE = "https://raildata.njtransit.com/api/TrainData";
@@ -22,6 +23,7 @@ export const TTL = {
   boardWithStops: 60,
   trainStops: 30,
   alerts: 120,
+  vehicles: 30,
   token: 7 * 24 * 60 * 60,
 };
 
@@ -79,6 +81,13 @@ export class NjtLiveSource implements RailSource {
     return this.cache.getOrLoad(`njt:msg:${station ?? "*"}`, TTL.alerts, async () => {
       const r = await this.call<StationMessage[] | null>("getStationMSG", fields);
       return r ?? [];
+    });
+  }
+
+  vehicles(): Promise<VehicleData[]> {
+    return this.cache.getOrLoad("njt:vehicles", TTL.vehicles, async () => {
+      const r = await this.call<VehicleData[] | null>("getVehicleData", {});
+      return Array.isArray(r) ? r : [];
     });
   }
 
