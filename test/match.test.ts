@@ -1,3 +1,4 @@
+import { isAccessAlert } from "../src/tools.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolveStation, searchStations, matchesLine, StationNotFound } from "../src/match.ts";
@@ -47,4 +48,12 @@ test("line nicknames match NJ Transit's line names", () => {
   assert.ok(matchesLine(me, "morris and essex"));
   assert.ok(matchesLine(me, "M&E"));
   assert.ok(!matchesLine(me, "raritan"));
+});
+
+test("isAccessAlert spots elevator and accessibility alerts only", () => {
+  assert.ok(isAccessAlert("Elevator out of service at Secaucus"));
+  assert.ok(isAccessAlert("Escalators closed at Newark Penn"));
+  assert.ok(isAccessAlert("Station is not ADA accessible today"));
+  assert.ok(!isAccessAlert("Trains delayed 15 minutes due to signal problems"));
+  assert.ok(!isAccessAlert("Shuttle bus replaces trains"));
 });

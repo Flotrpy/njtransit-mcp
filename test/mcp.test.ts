@@ -42,7 +42,7 @@ test("notifications get 202 with no body", async () => {
 test("tools/list returns all tools with schemas", async () => {
   const r = await rpc(app, { jsonrpc: "2.0", id: 3, method: "tools/list" });
   const names = r.body.result.tools.map((t: { name: string }) => t.name).sort();
-  assert.deepEqual(names, ["find_station", "last_train", "leave_by", "my_commute", "next_departures", "plan_trip", "service_alerts", "train_status", "trains_near"]);
+  assert.deepEqual(names, ["elevator_status", "find_station", "last_train", "leave_by", "my_commute", "next_departures", "plan_trip", "service_alerts", "train_status", "trains_near"]);
   for (const t of r.body.result.tools) {
     assert.equal(t.inputSchema.type, "object");
     assert.ok(t.description.length > 40);
@@ -293,4 +293,15 @@ test("trains_near lists moving trains closest first, inside the radius", async (
   assert.deepEqual(far.body.result.structuredContent.trains, []);
   const bad = await call("trains_near", { latitude: "north", longitude: -74 });
   assert.equal(bad.body.result.isError, true);
+});
+
+test("elevator_status finds elevator alerts and says when there are none", async () => {
+  const se = await call("elevator_status", { station: "Secaucus" });
+  assert.match(se.body.result.content[0].text, /Elevator out of service/);
+  assert.ok(se.body.result.structuredContent.alerts.length >= 1);
+  const tr = await call("elevator_status", { station: "Trenton" });
+  assert.match(tr.body.result.content[0].text, /No elevator, escalator or accessibility alerts/);
+  assert.equal(tr.body.result.structuredContent.alerts.length, 0);
+  const all = await call("elevator_status", {});
+  assert.equal(all.body.result.structuredContent.station, null);
 });

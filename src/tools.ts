@@ -3,7 +3,7 @@
 import { matchesLine, matchesText, normalize, resolveStation, searchStations, StationNotFound } from "./match.ts";
 import { NjtError } from "./njt.ts";
 import { etParts, etWallToEpoch, formatClock, formatDayClock, formatDuration, parseNjtTime, relativeMinutes } from "./time.ts";
-import type { Capacity, RailSource, ScheduleItem, Station, Stop, TrainStopList } from "./types.ts";
+import type { Capacity, RailSource, ScheduleItem, Station, StationMessage, Stop, TrainStopList } from "./types.ts";
 
 export interface ToolResult {
   content: { type: "text"; text: string }[];
@@ -1062,6 +1062,60 @@ const trainsNear: ToolDef = {
   },
 };
 
+/** Alerts with text, newest first, each text once (NJ Transit repeats some per station). */
+async function currentAlerts(ctx: ToolContext, stationCode?: string): Promise<(StationMessage & { t?: number })[]> {
+  const msgs = (await ctx.source.alerts(stationCode))
+    .filter((m) => m.MSG_TEXT?.trim())
+    .map((m) => ({ ...m, t: parseNjtTime(m.MSG_PUBDATE_UTC) ?? parseNjtTime(m.MSG_PUBDATE) }))
+    .sort((a, b) => (b.t ?? 0) - (a.t ?? 0));
+  const seen = new Set<string>();
+  return msgs.filter((m) => (seen.has(m.MSG_TEXT) ? false : (seen.add(m.MSG_TEXT), true)));
+}
+
+/** Words that mark an alert as being about getting around a station step-free. */
+const ACCESS_WORDS = /\b(elevators?|escalators?|lifts?|ramps?|accessib\w*|ada|wheelchairs?|step[- ]free|mini[- ]?high|high[- ]level platform)\b/i;
+
+export function isAccessAlert(text: string): boolean {
+  return ACCESS_WORDS.test(text);
+}
+
+const elevatorStatus: ToolDef = {
+  name: "elevator_status",
+  title: "NJ Transit elevator and escalator alerts",
+  description:
+    "Elevator, escalator and other accessibility alerts NJ Transit has posted, for one station or system-wide. " +
+    "Use for \"is the elevator working at Secaucus?\" or step-free trip planning. Only covers outages NJ Transit " +
+    "posts as alerts, so no alert doesn't guarantee everything works.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      station: { type: "string", description: "Station name or code. Leave out for every station." },
+    },
+    additionalProperties: false,
+  },
+  annotations: READ_ONLY,
+  async run(args, ctx) {
+    const stQuery = str(args, "station");
+    const st = stQuery ? await station(ctx, stQuery) : undefined;
+    const now = ctx.now();
+    const found = (await currentAlerts(ctx, st?.STATION_2CHAR)).filter((m) => isAccessAlert(m.MSG_TEXT));
+    const where = st ? `at ${st.STATIONNAME}` : "on NJ Transit rail";
+    const body = found.length
+      ? `Elevator and accessibility alerts ${where}:\n` +
+        found.map((m) => `- ${m.MSG_TEXT.trim()}${m.t !== undefined ? ` (posted ${formatDayClock(m.t)})` : ""}`).join("\n")
+      : `No elevator, escalator or accessibility alerts posted ${where} right now. NJ Transit doesn't post every outage, so check the station's signs if step-free access matters.`;
+    return text(`${body}\n\n${footer(ctx.source, now)}`, {
+      station: st ? { code: st.STATION_2CHAR, name: st.STATIONNAME } : null,
+      alerts: found.map((m) => ({
+        text: m.MSG_TEXT.trim(),
+        posted: m.t !== undefined ? formatDayClock(m.t) : null,
+        station: m.MSG_STATION_SCOPE ?? null,
+      })),
+      sampleData: ctx.source.mode === "mock",
+    });
+  },
+};
+
 const serviceAlerts: ToolDef = {
   name: "service_alerts",
   title: "NJ Transit rail service alerts",
@@ -1082,15 +1136,9 @@ const serviceAlerts: ToolDef = {
     const line = str(args, "line");
     const st = stQuery ? await station(ctx, stQuery) : undefined;
     const now = ctx.now();
-    const all = await ctx.source.alerts(st?.STATION_2CHAR);
-    const msgs = all
-      .filter((m) => m.MSG_TEXT?.trim())
-      .filter((m) => !line || !m.MSG_LINE_SCOPE || matchesLine({ LINE: m.MSG_LINE_SCOPE }, line))
-      .map((m) => ({ ...m, t: parseNjtTime(m.MSG_PUBDATE_UTC) ?? parseNjtTime(m.MSG_PUBDATE) }))
-      .sort((a, b) => (b.t ?? 0) - (a.t ?? 0));
-    // NJ Transit repeats some alerts per station; show each text once.
-    const seen = new Set<string>();
-    const unique = msgs.filter((m) => (seen.has(m.MSG_TEXT) ? false : (seen.add(m.MSG_TEXT), true)));
+    const unique = (await currentAlerts(ctx, st?.STATION_2CHAR)).filter(
+      (m) => !line || !m.MSG_LINE_SCOPE || matchesLine({ LINE: m.MSG_LINE_SCOPE }, line),
+    );
 
     const scope = [st && `at ${st.STATIONNAME}`, line && `on ${line}`].filter(Boolean).join(" ");
     const header = `NJ Transit rail alerts${scope ? ` ${scope}` : ""}:`;
@@ -1111,7 +1159,7 @@ const serviceAlerts: ToolDef = {
   },
 };
 
-export const TOOLS: ToolDef[] = [nextDepartures, planTrip, myCommute, leaveBy, lastTrain, trainStatus, trainsNear, serviceAlerts, findStation];
+export const TOOLS: ToolDef[] = [nextDepartures, planTrip, myCommute, leaveBy, lastTrain, trainStatus, trainsNear, serviceAlerts, elevatorStatus, findStation];
 
 /** Run a tool by name, turning expected problems into readable tool errors. */
 export async function callTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {

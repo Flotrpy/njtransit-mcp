@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9 (Nov 26, 2026)
+- New tool `elevator_status`: elevator, escalator and other accessibility alerts for one station or every station, newest first. Says plainly when none are posted, since NJ Transit doesn't post every outage.
+- `service_alerts` and `elevator_status` share one alert reader (newest first, repeats removed).
+
 ## 0.1.8 (Nov 25, 2026)
 - New tool `trains_near`: trains moving near a latitude and longitude right now, closest first, with distance, direction, next stop and delay (NJ Transit's getVehicleData, cached 30 seconds).
 - Sample trains now have positions between their stops, so the tool works without an account.
