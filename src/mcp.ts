@@ -4,11 +4,12 @@
 //
 // Spec: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports
 
+import { PROMPTS } from "./prompts.ts";
 import { callTool, TOOLS, type ToolContext } from "./tools.ts";
 import type { Config, RailSource } from "./types.ts";
 
 export const SERVER_NAME = "njtransit-trains";
-export const SERVER_VERSION = "0.1.9";
+export const SERVER_VERSION = "0.1.10";
 const SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const LATEST = SUPPORTED_VERSIONS[0];
 
@@ -91,7 +92,7 @@ export function createApp(source: RailSource, cfg: Config, now: () => number = D
           id: msg.id ?? null,
           result: {
             protocolVersion: SUPPORTED_VERSIONS.includes(asked) ? asked : LATEST,
-            capabilities: { tools: { listChanged: false } },
+            capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
             serverInfo: { name: SERVER_NAME, title: "NJ Transit Trains", version: SERVER_VERSION },
             instructions: INSTRUCTIONS,
           },
@@ -123,7 +124,22 @@ export function createApp(source: RailSource, cfg: Config, now: () => number = D
       case "resources/list":
         return { jsonrpc: "2.0", id: msg.id ?? null, result: { resources: [] } };
       case "prompts/list":
-        return { jsonrpc: "2.0", id: msg.id ?? null, result: { prompts: [] } };
+        return {
+          jsonrpc: "2.0",
+          id: msg.id ?? null,
+          result: { prompts: PROMPTS.map(({ name, title, description, arguments: a }) => ({ name, title, description, arguments: a })) },
+        };
+      case "prompts/get": {
+        const p = PROMPTS.find((x) => x.name === String(msg.params?.name ?? ""));
+        if (!p) return rpcError(msg.id, -32602, `Unknown prompt: ${msg.params?.name}`);
+        const raw = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+        const args = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")]));
+        return {
+          jsonrpc: "2.0",
+          id: msg.id ?? null,
+          result: { description: p.description, messages: [{ role: "user", content: { type: "text", text: p.build(args) } }] },
+        };
+      }
       default:
         if (isNotification) return null; // e.g. notifications/initialized, notifications/cancelled
         return rpcError(msg.id, -32601, `Method not found: ${msg.method}`);

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.10 (Nov 27, 2026)
+- First MCP prompt, `commute_briefing`: pick it in your client for a short summary of your next trains, a backup, and any alerts on your stations. Takes optional home and away stations, or uses COMMUTE_HOME and COMMUTE_AWAY.
+- The server now answers `prompts/get` and advertises prompts when it starts up.
+
 ## 0.1.9 (Nov 26, 2026)
 - New tool `elevator_status`: elevator, escalator and other accessibility alerts for one station or every station, newest first. Says plainly when none are posted, since NJ Transit doesn't post every outage.
 - `service_alerts` and `elevator_status` share one alert reader (newest first, repeats removed).

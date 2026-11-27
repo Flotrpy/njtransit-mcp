@@ -305,3 +305,14 @@ test("elevator_status finds elevator alerts and says when there are none", async
   const all = await call("elevator_status", {});
   assert.equal(all.body.result.structuredContent.station, null);
 });
+
+test("commute_briefing prompt is listed and fills in stations", async () => {
+  const list = await rpc(app, { jsonrpc: "2.0", id: 1, method: "prompts/list" });
+  assert.deepEqual(list.body.result.prompts.map((p: { name: string }) => p.name), ["commute_briefing"]);
+  const got = await rpc(app, { jsonrpc: "2.0", id: 2, method: "prompts/get", params: { name: "commute_briefing", arguments: { home: "Metropark", away: "Newark Penn" } } });
+  const text = got.body.result.messages[0].content.text;
+  assert.match(text, /my_commute with home "Metropark" and away "Newark Penn"/);
+  assert.match(text, /service_alerts/);
+  const bad = await rpc(app, { jsonrpc: "2.0", id: 3, method: "prompts/get", params: { name: "nope" } });
+  assert.equal(bad.body.error.code, -32602);
+});

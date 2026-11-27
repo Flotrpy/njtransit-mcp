@@ -14,7 +14,7 @@ Add new ideas at the bottom.
 - [x] `next_departures` option `njt_only` (Nov 24) to hide Amtrak trains on shared stations.
 - [x] `trains_near` (Nov 25): given a latitude/longitude, list trains moving nearby (getVehicleData; sample data needs positions too).
 - [x] `elevator_status` (Nov 26): elevator, escalator and accessibility alerts for a station or system-wide.
-- [ ] MCP prompt `commute_briefing`: a ready-made prompt that calls service_alerts + my_commute for a morning summary.
+- [x] MCP prompt `commute_briefing` (Nov 27): a ready-made prompt that calls my_commute and service_alerts for a short summary.
 - [ ] `list_lines`: every line with its nickname, and which stations it serves (from sample data and live boards).
 - [ ] Resource template `njt://station/{code}`: station name, lines, and current alerts as an MCP resource.
 - [ ] `delay_report`: how late each line is running right now, from the boards of a few hub stations (NY, SE, NP, TR, HB).

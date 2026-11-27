@@ -30,6 +30,8 @@ data**, so you can try everything before signing up.
 | `trains_near` | Trains moving near a spot (latitude and longitude) right now, closest first, with direction and next stop. |
 | `service_alerts` | Current alerts, system-wide or for a station or line. |
 | `elevator_status` | Elevator, escalator and accessibility alerts for a station or system-wide. |
+
+Prompt: `commute_briefing` gives a short summary of your next trains and any alerts on your stations (optional `home` and `away`).
 | `find_station` | Station names to 2-letter codes. Knows nicknames like "Penn Station", "EWR", "Secaucus". |
 
 Station names can be typed naturally; the server matches nicknames and typos.
@@ -49,7 +51,7 @@ Needs Node.js 22.18 or newer (runs the TypeScript directly, no build step).
 
 ```bash
 cd njtransit-mcp
-npm test                                   # 50 tests
+npm test                                   # 51 tests
 npm run try -- next_departures '{"station":"secaucus"}'
 npm run try -- plan_trip '{"from":"metropark","to":"penn station"}'
 npm start                                  # MCP server at http://127.0.0.1:8787/mcp
